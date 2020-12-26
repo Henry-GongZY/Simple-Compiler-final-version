@@ -110,6 +110,27 @@ void TreeNode::printData(){
     this->tablePrint();
 }
 
+void TreeNode::gen_label(){
+    switch(this->nodeType){
+        case NODE_STMT:
+            if(sType2String(this->stype) == "STMT_WHILE"){
+                TreeNode* condition = this->child;
+                TreeNode* movement = condition->sibling;
+
+            }
+            if(sType2String(this->stype) == "STMT_IF"){
+
+            }
+        case NODE_EXPR:
+            
+        
+    }
+}
+
+void TreeNode::gen_code(){
+    
+}
+
 bool TreeNode::typeCheck(){
 	switch (this->nodeType){
         case NODE_STMT:
@@ -124,10 +145,7 @@ bool TreeNode::typeCheck(){
                         cout<<"ASSIGN STMT type error at line "<<lineno<<endl;
                         exit(1);
                     }
-                } else{
-                    cout<<"ASSIGN STMT type error at line "<<lineno<<endl;
-                    exit(1);
-                } 
+                }
             } else if (sType2String(this->stype) == "STMT_IF"){
                 if(this->child->typeCheck()){
                     if(this->child->type->getTypeInfo()!="bool"){
@@ -143,6 +161,16 @@ bool TreeNode::typeCheck(){
                         cout<<"WHILE STMT type error at line "<<lineno<<endl;
                         exit(1);
                     } else{
+                        return true;
+                    }
+                }
+            } else if (sType2String(this->stype) == "STMT_FOR"){
+                if(this->child->typeCheck() && this->child->sibling->typeCheck() 
+                && this->child->sibling->sibling->typeCheck() && this->child->sibling->sibling->sibling->typeCheck()){
+                    if(this->child->sibling->type->getTypeInfo()!="bool"){
+                        cout<<"FOR STMT type error at line "<<lineno<<endl;
+                        exit(1);
+                    } else {
                         return true;
                     }
                 }

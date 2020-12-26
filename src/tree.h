@@ -79,6 +79,8 @@ public:
     void printData();
     void printSpecialInfo();
     void doType();
+    void gen_label();
+    void gen_code();
 
     void genNodeId();
     void tableInsert();

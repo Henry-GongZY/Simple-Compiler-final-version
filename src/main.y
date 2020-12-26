@@ -84,13 +84,10 @@ while_stmt
 //for语句的不同情况
 for_stmt
 : 
-  FOR LPAREN do_assign SEMICOLON expr SEMICOLON do_assign RPAREN statement{
+  FOR LPAREN do_assign SEMICOLON expr SEMICOLON do_assign RPAREN statement {
     TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
     $$ = node;}
 | FOR LPAREN do_assign SEMICOLON expr SEMICOLON expr RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
-    $$ = node;}
-| FOR LPAREN expr SEMICOLON expr SEMICOLON expr RPAREN statement {
     TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
     $$ = node;}
 | FOR LPAREN declaration SEMICOLON expr SEMICOLON expr RPAREN statement {
@@ -98,30 +95,6 @@ for_stmt
     $$ = node;}
 | FOR LPAREN declaration SEMICOLON expr SEMICOLON do_assign RPAREN statement {
     TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
-    $$ = node;}
-| FOR LPAREN SEMICOLON expr SEMICOLON do_assign RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, nullptr, $4, $6, $8);
-    $$ = node;}
-| FOR LPAREN expr SEMICOLON SEMICOLON do_assign RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, $3, nullptr, $6, $8);
-    $$ = node;}
-| FOR LPAREN expr SEMICOLON expr SEMICOLON RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, $3, $5, nullptr, $8);
-    $$ = node;}
-| FOR LPAREN SEMICOLON SEMICOLON expr RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, nullptr, nullptr, $5, $7);
-    $$ = node;}
-| FOR LPAREN SEMICOLON SEMICOLON do_assign RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, nullptr, nullptr, $5, $7);
-    $$ = node;}
-| FOR LPAREN SEMICOLON expr SEMICOLON RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, nullptr, $4, nullptr, $7);
-    $$ = node;}
-| FOR LPAREN do_assign SEMICOLON SEMICOLON RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, $3, nullptr, nullptr, $7);
-    $$ = node;}
-| FOR LPAREN SEMICOLON SEMICOLON RPAREN statement {
-    TreeNode* node = for_addChild($1->lineno, nullptr, nullptr, nullptr, $6);
     $$ = node;}
 ;
 
