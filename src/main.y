@@ -48,7 +48,7 @@ statements
 
 //语句
 statement
-: T MAIN LPAREN RPAREN statements {
+: T MAIN LPAREN RPAREN statement {
     $2->addChild($1);
     $2->addChild($5);
     $$ = $2;
@@ -71,9 +71,16 @@ statement
 | expr SEMICOLON {$$ = $1;}
 ;
 
+body 
+: statement{
+    TreeNode* node = new TreeNode($1->lineno, NODE_BODY);
+    node->addChild($1);
+    $$ = node;
+}
+
 //while语句
 while_stmt
-: WHILE LPAREN expr RPAREN statement {
+: WHILE LPAREN expr RPAREN body {
     TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
     node->stype = STMT_WHILE;
     node->addChild($3);
@@ -84,16 +91,16 @@ while_stmt
 //for语句的不同情况
 for_stmt
 : 
-  FOR LPAREN do_assign SEMICOLON expr SEMICOLON do_assign RPAREN statement {
+  FOR LPAREN do_assign SEMICOLON expr SEMICOLON do_assign RPAREN body {
     TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
     $$ = node;}
-| FOR LPAREN do_assign SEMICOLON expr SEMICOLON expr RPAREN statement {
+| FOR LPAREN do_assign SEMICOLON expr SEMICOLON expr RPAREN body {
     TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
     $$ = node;}
-| FOR LPAREN declaration SEMICOLON expr SEMICOLON expr RPAREN statement {
+| FOR LPAREN declaration SEMICOLON expr SEMICOLON expr RPAREN body {
     TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
     $$ = node;}
-| FOR LPAREN declaration SEMICOLON expr SEMICOLON do_assign RPAREN statement {
+| FOR LPAREN declaration SEMICOLON expr SEMICOLON do_assign RPAREN body {
     TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
     $$ = node;}
 ;
@@ -158,7 +165,7 @@ if_else_stmt
 ;
 
 if_stmt
-: IF LPAREN expr RPAREN statement {
+: IF LPAREN expr RPAREN body {
     //开辟 if 空间
     TreeNode* node = new TreeNode($1->lineno,NODE_STMT);
     node->stype = STMT_IF;
@@ -169,7 +176,7 @@ if_stmt
 ;
 
 else_stmt
-: ELSE statement {
+: ELSE body {
     TreeNode* node = new TreeNode($1->lineno,NODE_STMT);
     node->stype = STMT_ELSE;
     node->addChild($2);

@@ -1,1 +1,11 @@
-a  int,b  int,ch  char,i  int,s  int,
+# your asm code header here
+
+# define your veriables and temp veriables here
+	.bss
+_a:
+	.zero	4
+	.align	4
+_b:
+	.zero	4
+	.align	4
+a  bool,b  int,

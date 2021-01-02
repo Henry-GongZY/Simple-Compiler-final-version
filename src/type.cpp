@@ -14,13 +14,9 @@ string Type::getTypeInfo() {
             return "char";
         case VALUE_STRING:
             return "string";
-        case VALUE_DOUBLE:
-            return "double";
-        case VALUE_VOID:
-            return "void";
         default:
             cerr << "shouldn't reach here, typeinfo";
-            return "no type or error";
+            assert(0);
     }
     return "?";
 }

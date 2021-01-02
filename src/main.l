@@ -9,6 +9,7 @@ LINECOMMENT \/\/[^\n]*
 EOL	(\r\n|\r|\n)
 WHILTESPACE [[:blank:]]
 
+
 INTEGER [0-9]+
 DOUBLE [0-9]+(\.[0-9]+)?
 CHAR \'.?\'

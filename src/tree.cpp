@@ -2,6 +2,7 @@
 #define TREE_CPP
 #include "tree.h"
 int nodeid = 0;
+int label_seq = 0;
 map<string,Type*> SymbolTable;
 
 void TreeNode::addChild(TreeNode* child) {
@@ -83,7 +84,8 @@ void TreeNode::printNodeInfo(TreeNode* t){
     }
     cout << "lno@" << t->lineno << "  "<< "@" << t->nodeID << "  " << nodeType2String(t->nodeType) << "  " << type << "  children:[";
     t->printChildrenId();
-    cout << "]" << endl;
+    cout << "]" <<"  ";
+    cout<<"label:"<<" begin:"<<" "<<t->label.begin_label<<" false:"<<" "<<t->label.false_label<<" next:"<<" "<<t->label.next_label<<" true:"<<" "<<t->label.true_label<<endl;
 }
 
 void TreeNode::printChildrenId(){
@@ -106,40 +108,166 @@ void TreeNode::printData(){
     this->tableInsert();
     this->doType();
     this->typeCheck();
-    this->printAST();
+    this->gen_label();
+    //this->printAST();
+    //this->gen_header();
+    //this->gen_decl();
     this->tablePrint();
 }
 
-void TreeNode::gen_label(){
-    switch(this->nodeType){
-        case NODE_STMT:
-            if(sType2String(this->stype) == "STMT_WHILE"){
-                TreeNode* condition = this->child;
-                TreeNode* movement = condition->sibling;
 
-            }
-            if(sType2String(this->stype) == "STMT_IF"){
+string TreeNode::new_label()
+{
+	char tmp[20];
+	sprintf(tmp, "@%d", label_seq);
+	label_seq++;
+	return tmp;
+}
 
-            }
-        case NODE_EXPR:
+void TreeNode::stmt_get_label(){
+    switch(this->stype){
+        case STMT_WHILE:
+        {
+            //判断语句
+            TreeNode *e = this->child;
+            //循环体
+			TreeNode *s = this->child->sibling;
             
-        
+            if (this->label.begin_label == "")
+                this->label.begin_label = new_label();
+
+            s->label.next_label = this->label.begin_label;
+
+            s->label.begin_label = e->label.true_label = new_label();
+
+            if (this->label.next_label == "")
+				this->label.next_label = new_label();
+
+			e->label.false_label = this->label.next_label;
+			if (this->sibling)
+				this->sibling->label.begin_label = this->label.next_label;
+
+            e->recursive_get_label();
+            s->recursive_get_label();
+
+            break;
+        }
+        case STMT_IF:
+        {
+            //判断语句
+            TreeNode *f1 = this->child;
+            //执行语句
+			TreeNode *lang = this->child->sibling;
+
+            if (this->label.begin_label == "")
+                this->label.begin_label = new_label();
+            
+            lang->label.begin_label = f1->label.true_label = new_label();
+
+            if (this->label.next_label == "")
+                f1->label.false_label = lang->label.next_label = this->label.next_label = new_label();
+            
+            if (this->sibling)
+				this->sibling->label.begin_label = this->label.next_label;
+            
+            f1->recursive_get_label();
+            lang->recursive_get_label();
+            break;
+        }
+        case STMT_ELSE:
+        {
+            this->label.next_label = new_label();
+
+            if (this->sibling)
+				this->sibling->label.begin_label = this->label.next_label;
+            
+            TreeNode* curr = this->child;
+            for(curr;curr->sibling!=nullptr;curr = curr->sibling){
+                curr->recursive_get_label();
+            }
+
+            break;
+        }
+        // case STMT_FOR:
+        // {
+        //     //循环的三个语句
+        //     TreeNode* f1 = this->child;
+        //     TreeNode* f2 = this->child->sibling;
+        //     TreeNode* f3 = this->child->sibling->sibling;
+        //     //循环体
+        //     TreeNode* lang = this->child->sibling->sibling->sibling;
+            
+        //     break;
+        // }
+        default:
+        {
+            TreeNode* curr = this->child;
+            for(curr;curr->sibling!=nullptr;curr = curr->sibling){
+                curr->recursive_get_label();
+            }
+        }
     }
 }
 
-void TreeNode::gen_code(){
+void TreeNode::expr_get_label(){
+    if(this->type->getTypeInfo() != "bool")
+        return;
+    
+    TreeNode* leftop = this->child;
+    TreeNode* rightop;
+    if(this->child->sibling !=nullptr){
+        rightop = this->child->sibling;
+    } else rightop = nullptr;
+    leftop->recursive_get_label();
+    if(rightop!=nullptr){
+        rightop->recursive_get_label();
+    }
+    return;
+    // if(sType2String(this->stype) == "&&"){
+    //     leftop->label.true_label = new_label();
+    //     rightop->label.true_label = this->label.true_label;
+    //     leftop->label.false_label = rightop->label.false_label = this->label.false_label;
+    // }
     
 }
 
+void TreeNode::recursive_get_label()
+{
+	if (this->nodeType == NODE_STMT)
+		this->stmt_get_label();
+	else if (this->nodeType == NODE_EXPR)
+		this->expr_get_label();
+}
+
+void TreeNode::gen_label(){
+	this->label.begin_label = "_start";
+	TreeNode* curr = this->child->child;
+    while(curr!=nullptr){
+        curr->recursive_get_label();
+        curr = curr->sibling;
+    }
+}
+
+
+
+
 bool TreeNode::typeCheck(){
 	switch (this->nodeType){
+        case NODE_BODY:
+        {
+            TreeNode *curr = this->child;
+            for(curr;curr->sibling !=nullptr;curr = curr->sibling){
+                curr->typeCheck();
+            }
+            break;
+        }
         case NODE_STMT:
             if(sType2String(this->stype) == "=" || sType2String(this->stype) == "+=" \
             || sType2String(this->stype) == "-=" || sType2String(this->stype) == "*=" \
             || sType2String(this->stype) == "%=" || sType2String(this->stype) == "/=" ){
                 if(this->child->typeCheck()&&this->child->sibling->typeCheck()){
                     if(this->child->type->getTypeInfo() == this->child->sibling->type->getTypeInfo()){
-                        this->type = TYPE_BOOL;
+                        this->type = this->child->type;
                         return true;
                     } else {
                         cout<<"ASSIGN STMT type error at line "<<lineno<<endl;
@@ -147,7 +275,7 @@ bool TreeNode::typeCheck(){
                     }
                 }
             } else if (sType2String(this->stype) == "STMT_IF"){
-                if(this->child->typeCheck()){
+                if(this->child->typeCheck() && this->child->sibling->typeCheck()){
                     if(this->child->type->getTypeInfo()!="bool"){
                         cout<<"IF STMT type error at line "<<lineno<<endl;
                         exit(1);
@@ -156,7 +284,7 @@ bool TreeNode::typeCheck(){
                     }
                 }
             } else if (sType2String(this->stype) == "STMT_WHILE"){
-                if(this->child->typeCheck()){
+                if(this->child->typeCheck() && this->child->sibling->typeCheck()){
                     if(this->child->type->getTypeInfo()!="bool"){
                         cout<<"WHILE STMT type error at line "<<lineno<<endl;
                         exit(1);
@@ -175,6 +303,7 @@ bool TreeNode::typeCheck(){
                     }
                 }
             } else return true;
+            break;
         case NODE_EXPR:
             if(opType2String(this->optype) == "+" || opType2String(this->optype) == "-" \
             ||opType2String(this->optype) == "*" || opType2String(this->optype) == "/"){
@@ -277,6 +406,7 @@ bool TreeNode::typeCheck(){
                 }
                 return true;
             }
+            break;
         case NODE_TYPE:
             return true;
         case NODE_VAR:
@@ -417,6 +547,8 @@ string TreeNode::nodeType2String (NodeType type){
             return "NODE_TYPE";
         case NODE_VAR:
             return "NODE_VAR";
+        case NODE_BODY:
+            return "NODE_BODY";
         default:
             return "<>";
             break;

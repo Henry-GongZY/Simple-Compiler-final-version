@@ -12,6 +12,7 @@ enum NodeType
     NODE_TYPE,   //类型    ok
     NODE_STMT,   //语句  
     NODE_PROG,   //程序树根
+    NODE_BODY,   
     NODE_MAIN    //main函数入口
 };
 
@@ -58,13 +59,20 @@ enum StmtType {
 }
 ;
 
+struct Label {
+	string true_label;
+	string false_label;
+	string begin_label;
+	string next_label;
+};
+
 struct TreeNode {
 public:
     int nodeID;  //用于作业的序号输出
     int lineno;  //记录行号
     NodeType nodeType; //节点类型
+    Label label;
     
-
     TreeNode* child = nullptr;  //一个孩子，其他孩子表现为此孩子的兄弟
     TreeNode* sibling = nullptr;  //兄弟
 
@@ -79,8 +87,6 @@ public:
     void printData();
     void printSpecialInfo();
     void doType();
-    void gen_label();
-    void gen_code();
 
     void genNodeId();
     void tableInsert();
@@ -99,6 +105,17 @@ public:
     static string nodeType2String (NodeType type);
     static string opType2String (OperatorType type);
     static string sType2String (StmtType type);
+
+    string new_label();
+	void recursive_get_label();
+	void stmt_get_label();
+	void expr_get_label();
+    void gen_label();
+	void gen_header();
+	void gen_decl();
+	void recursive_gen_code();
+	void stmt_gen_code();
+	void expr_gen_code();
 
 public:
     TreeNode(int lineno, NodeType type);
