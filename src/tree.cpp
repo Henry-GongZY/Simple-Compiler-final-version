@@ -3,7 +3,7 @@
 #include "tree.h"
 #include "symboltable.h"
 
-extern idlist IDlist;
+extern SymbolTable IDlist;
 extern Type* TYPE_INT;
 extern Type* TYPE_CHAR;
 extern Type* TYPE_BOOL;
@@ -37,14 +37,14 @@ TreeNode::TreeNode(int lineno, NodeType type) {
 
 void TreeNode::genNodeId() {
     this->nodeID=0;
-    int count=1;
+    int idcount=1;
     queue<TreeNode*> q;
     q.push(this);
     while(!q.empty()){
         TreeNode *next=q.front()->child;//下一层
         q.pop();
         while(next!=nullptr){
-            next->nodeID=count++;//同层所有结点赋值
+            next->nodeID=idcount++;//同层所有结点赋值
             q.push(next);
             next=next->sibling;
         }
@@ -106,7 +106,6 @@ void TreeNode::printAST() {
     }
     
 }
-
 
 void TreeNode::printSpecialInfo() {
     switch (this->nodeType)
@@ -262,7 +261,7 @@ void TreeNode::gen_code(){
 
 
 void TreeNode::gen_const(){
-    int count=0;
+    int idcount=0;
     queue<TreeNode*> q;
     q.push(this);
     while(!q.empty()){
@@ -271,10 +270,10 @@ void TreeNode::gen_const(){
         while(next!=nullptr){
             //字符串常量需要在rodata段开空间存储
             if(next->nodeType==NODE_CONST&&next->type->type==VALUE_STRING){
-                cout<<"STRING"<<count<<":"<<endl;
+                cout<<"STRING"<<idcount<<":"<<endl;
                 cout<<"\t.string "<<next->str_val<<endl;
-                next->count_string=count;
-                count++;
+                next->count_string=idcount;
+                idcount++;
             }
             q.push(next->child);
             next=next->sibling;
@@ -291,9 +290,9 @@ void TreeNode::gen_var(){
         while(next!=nullptr){
             //如果该节点是变量类型的节点
             if(next->nodeType==NODE_VAR){
-                idnode* x=IDlist.find_by_node(next);
+                Symbol* x=IDlist.find_by_node(next);
                 //该变量是声明节点且目前没有开空间，则为其开辟全局变量空间
-                if(x->decl_or_refe==0){
+                if(x->declaration==0){
                     cout<<"_"<<next->var_name<<":"<<endl<<"\t.zero 4"<<endl<<"\t.align 4"<<endl;
                 }
             }
@@ -305,21 +304,20 @@ void TreeNode::gen_var(){
 }
 
 void TreeNode::gen_temp_var(){
-    int count=0;
+    int idcount=0;
     queue<TreeNode*> q;
     q.push(this);
     while(!q.empty()){
-        TreeNode *next=q.front();//根节点放入队列
+        TreeNode *next=q.front();
         q.pop();
         while(next!=nullptr){
-            //表达式中如a+b、a*b之类需要生成临时变量
+            //+-*/
             if(next->nodeType==NODE_EXPR){
-                //前缀++、--，后缀++、--都不需要另开空间，但前缀+、-和!都需要开空间
                 if(next->etype!=EXPR_POSTFIX&&(next->etype!=EXPR_UNARY_LEFT||(next->child->optype!=OP_SELFP&&next->child->optype!=OP_SELFM))){
-                    next->var_name="temp"+to_string(count);//给表达式制定一个变量名存起来                    
-                    cout<<"_temp"<<count<<":"<<endl;
+                    next->var_name="temp"+to_string(idcount);      
+                    cout<<"_temp"<<idcount<<":"<<endl;
                     cout<<"\t.zero 4"<<endl<<"\t.align 4"<<endl;
-                    count++;
+                    idcount++;
                 }
             }
             q.push(next->child);
@@ -331,6 +329,7 @@ void TreeNode::gen_temp_var(){
 
 void TreeNode::gen_label(){
     stack<TreeNode*> s;
+    //先序遍历，提高性能
     s.push(this);
     while(!s.empty()){
         TreeNode *next=s.top();//根节点放入栈中
@@ -435,9 +434,9 @@ void TreeNode::gen_label(){
 }
 
 string TreeNode::new_label(){
-    static int count=0;
-    string tmp="L"+to_string(count);
-    count++;
+    static int idcount=0;
+    string tmp="L"+to_string(idcount);
+    idcount++;
     return tmp;
 }
 
@@ -565,17 +564,17 @@ void TreeNode::gen_content(){
             else //有参
             {
                 TreeNode* curr=str->sibling;
-                int count=0;
+                int idcount=0;
                 //统计变量数目
                 while(curr!=nullptr){
                     curr->gen_content();
-                    count++;
+                    idcount++;
                     cout<<"\tpushl _"<<curr->var_name<<endl;
                     curr=curr->sibling;
                 }
                 cout<<"\tpushl $STRING"<<str->count_string<<endl;
                 cout<<"\tcall printf"<<endl;
-                cout<<"\taddl $"<<4*(count+1)<<",%esp"<<endl;
+                cout<<"\taddl $"<<4*(idcount+1)<<",%esp"<<endl;
             }
         }
         else if(this->stype==STMT_SCANF){
@@ -584,17 +583,17 @@ void TreeNode::gen_content(){
             }
             TreeNode* str=this->child->sibling;
             TreeNode* curr=str->sibling;
-            int count=0;
+            int idcount=0;
             while(curr!=nullptr){
                 curr->gen_content();
-                count++;
+                idcount++;
                 cout<<"\tleal _"<<curr->var_name<<",%eax"<<endl;
                 cout<<"\tpushl %eax"<<endl;
                 curr=curr->sibling;
             }
             cout<<"\tpushl $STRING"<<str->count_string<<endl;
             cout<<"\tcall scanf"<<endl;
-            cout<<"\taddl $"<<4*(count+1)<<",%esp"<<endl;
+            cout<<"\taddl $"<<4*(idcount+1)<<",%esp"<<endl;
         }
         else if(this->stype==STMT_DECL){
             if(this->label.begin_label!=""){

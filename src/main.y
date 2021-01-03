@@ -4,7 +4,7 @@
     #define YYSTYPE TreeNode *  
     TreeNode* root;
     extern int lineno;
-    extern idlist IDlist;
+    extern SymbolTable IDlist;
     extern int layer;
     extern int num_of_layer[100];
     extern Type* TYPE_INT;
@@ -125,8 +125,8 @@ decl_stmt
         node->addChild($2);
         node->addChild($3);
         node->addChild($4);
-        idnode *x=IDlist.find_by_node($2);
-        x->decl_or_refe=0;//将节点设置为声明节点
+        Symbol *x=IDlist.find_by_node($2);
+        x->declaration=0;//将节点设置为声明节点
         x->node_type=$1->type;//记录节点的类型
         $2->type=$1->type; //把ID类型赋给ID
         if(IDlist.check_redefine(x)==true){
@@ -187,7 +187,7 @@ decl_stmt
         }      
         $$ = node;   
     } 
-| T idlist {
+| T SymbolTable {
         TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
         node->stype = STMT_DECL;
         node->addChild($1);
@@ -195,9 +195,9 @@ decl_stmt
         TreeNode* curr=$2;
         while(curr!=nullptr){
             if(curr->nodeType==NODE_VAR){
-                idnode* y=IDlist.find_by_node(curr);
+                Symbol* y=IDlist.find_by_node(curr);
                 //组合拳三件套
-                y->decl_or_refe=0;
+                y->declaration=0;
                 y->node_type=$1->type;
                 if(IDlist.check_redefine(y)==true){
                     cerr<<"Redefine variable "<<y->name<<" at line "<<$2->lineno<<endl;
@@ -344,20 +344,19 @@ for_stmt
         vector<string> symbol;
         while(x!=nullptr){
             if(x->nodeType==NODE_VAR){
-                idnode* y=IDlist.find_by_node(x);
+                Symbol* y=IDlist.find_by_node(x);
                 if(y==nullptr){
                     cerr<<"Var not defined at line "<<$3->lineno<<endl;
                     exit(1);
                 }
                 else{
                     y->depth++;
-                    y->num_of_depth=y->next_num_of_depth;
                     symbol.push_back(y->name);
                 }
             }
             x=x->sibling;
         }
-        //遍历or_expr，把所有在前一个decl_stmt里定义的变量的depth+1,num_of_depth=next_num_of_depth
+
         x=$5;
         queue<TreeNode*>q;
         q.push(x);
@@ -366,18 +365,17 @@ for_stmt
             q.pop();
             while(next!=nullptr){
                 if(next->nodeType==NODE_VAR){
-                    idnode* y=IDlist.find_by_node(next);
+                    Symbol* y=IDlist.find_by_node(next);
                     vector<string>::iterator result=find(symbol.begin(),symbol.end(),y->name);
                     if(result!=symbol.end()){
                         y->depth++;
-                        y->num_of_depth=y->next_num_of_depth;
                     }
                 }
                 q.push(next);
                 next=next->sibling;
             }
         }
-        //遍历assign_stmt，把所有在前一个decl_stmt里定义的变量的depth+1,num_of_depth=next_num_of_depth
+
         x=$7;
         q.push(x);
         while(!q.empty()){
@@ -385,11 +383,10 @@ for_stmt
             q.pop();
             while(next!=nullptr){
                 if(next->nodeType==NODE_VAR){
-                    idnode* y=IDlist.find_by_node(next);
+                    Symbol* y=IDlist.find_by_node(next);
                     vector<string>::iterator result=find(symbol.begin(),symbol.end(),y->name);
                     if(result!=symbol.end()){
                         y->depth++;
-                        y->num_of_depth=y->next_num_of_depth;
                     }
                 }
                 q.push(next);
@@ -398,7 +395,7 @@ for_stmt
         }
         $$=node;
     }
-| FOR LPAREN assign_stmt SEMICOLON or_expr SEMICOLON assign_stmt RPAREN statement { //111
+| FOR LPAREN assign_stmt SEMICOLON or_expr SEMICOLON assign_stmt RPAREN statement { 
         TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
         node->stype=STMT_FOR;
         node->addChild($1);
@@ -408,7 +405,7 @@ for_stmt
         node->addChild($9);
         $$=node;
     }
-| FOR LPAREN SEMICOLON SEMICOLON RPAREN statement RPAREN{ //000
+| FOR LPAREN SEMICOLON SEMICOLON RPAREN statement RPAREN{
         TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
         node->stype=STMT_FOR;
         node->addChild($1);
@@ -416,7 +413,7 @@ for_stmt
         $$=node;
 
     }
-| FOR LPAREN SEMICOLON or_expr SEMICOLON assign_stmt RPAREN statement { //011
+| FOR LPAREN SEMICOLON or_expr SEMICOLON assign_stmt RPAREN statement { 
         TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
         node->stype=STMT_FOR;
         node->addChild($1);
@@ -425,7 +422,7 @@ for_stmt
         node->addChild($8);
         $$=node;
     }
-| FOR LPAREN assign_stmt SEMICOLON SEMICOLON assign_stmt RPAREN statement { //101
+| FOR LPAREN assign_stmt SEMICOLON SEMICOLON assign_stmt RPAREN statement { 
         TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
         node->stype=STMT_FOR;
         node->addChild($1);
@@ -434,7 +431,7 @@ for_stmt
         node->addChild($8);
         $$=node;
     }
-| FOR LPAREN assign_stmt SEMICOLON or_expr SEMICOLON RPAREN statement { //110
+| FOR LPAREN assign_stmt SEMICOLON or_expr SEMICOLON RPAREN statement { 
         TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
         node->stype=STMT_FOR;
         node->addChild($1);
@@ -443,7 +440,7 @@ for_stmt
         node->addChild($8);
         $$=node;
     }
-| FOR LPAREN assign_stmt SEMICOLON SEMICOLON RPAREN statement { //100
+| FOR LPAREN assign_stmt SEMICOLON SEMICOLON RPAREN statement { 
         TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
         node->stype=STMT_FOR;
         node->addChild($1);
@@ -451,7 +448,7 @@ for_stmt
         node->addChild($7);
         $$=node;
     }
-| FOR LPAREN SEMICOLON or_expr SEMICOLON RPAREN statement { //010
+| FOR LPAREN SEMICOLON or_expr SEMICOLON RPAREN statement { 
         TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
         node->stype=STMT_FOR;
         node->addChild($1);
@@ -459,7 +456,7 @@ for_stmt
         node->addChild($7);
         $$=node;
     }
-| FOR LPAREN SEMICOLON SEMICOLON assign_stmt RPAREN statement { //001
+| FOR LPAREN SEMICOLON SEMICOLON assign_stmt RPAREN statement {
         TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
         node->stype=STMT_FOR;
         node->addChild($1);
@@ -476,8 +473,8 @@ scanf_stmt
         while(curr!=nullptr){
             //在符号表中找到对应节点,找不到则证明节点为未定义节点
             if(curr->nodeType==NODE_VAR){
-                idnode* x=IDlist.find_by_node(curr);
-                idnode* y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->count);
+                Symbol* x=IDlist.find_by_node(curr);
+                Symbol* y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->idcount);
                 if(y==nullptr){
                     cerr<<"Undefined var "<<x->name<<" at line "<<$5->lineno<<endl;
                     exit(1);
@@ -503,8 +500,8 @@ printf_stmt
         while(curr!=nullptr){
             //在符号表中找到对应节点,找不到则证明节点为未定义节点
             if(curr->nodeType==NODE_VAR){
-                idnode* x=IDlist.find_by_node(curr);
-                idnode* y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->count);
+                Symbol* x=IDlist.find_by_node(curr);
+                Symbol* y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->idcount);
                 if(y==nullptr){
                     cerr<<"Undefined variable "<<x->name<<" at line "<<$5->lineno<<endl;
                     exit(1);
@@ -546,8 +543,8 @@ printf_list
     }
 ;
 
-idlist
-: idlist COMMA IDENTIFIER{
+SymbolTable
+: SymbolTable COMMA IDENTIFIER{
         $$=$1;
         $$->addSibling($3);
     }
@@ -1332,8 +1329,8 @@ expr
     }
 | IDENTIFIER {
         //定义检查
-        idnode *x=IDlist.find_by_node($1);
-        idnode *y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->count);
+        Symbol *x=IDlist.find_by_node($1);
+        Symbol *y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->idcount);
         if(y==nullptr){
             cerr<<"Undefined variable "<<x->name<<" at line "<<$1->lineno<<endl;
             exit(1);

@@ -9,7 +9,7 @@ int lineno=1;
 extern int last_num_of_layer[50][50];
 extern int num_of_layer[100];
 extern int layer;
-extern idlist IDlist;
+extern SymbolTable IDlist;
 extern Type* TYPE_INT;
 extern Type* TYPE_CHAR;
 extern Type* TYPE_BOOL;

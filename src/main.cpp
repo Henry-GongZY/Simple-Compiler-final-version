@@ -17,7 +17,7 @@ extern Type* TYPE_VOID = new Type(VALUE_VOID);
 int layer=0;
 int num_of_layer[50];
 int last_num_of_layer[50][50];
-idlist IDlist;
+SymbolTable IDlist;
 
 using namespace std;
 int main(int argc, char *argv[])
@@ -35,14 +35,12 @@ int main(int argc, char *argv[])
             cerr << "failed to open file: " << argv[1] << endl;
         }
     }
-    fill(num_of_layer,num_of_layer+50,0); //初始化深度个数
-    fill(last_num_of_layer[0],last_num_of_layer[0]+50*50,-1); //初始化上一层深度个数
+    fill(num_of_layer,num_of_layer+50,0); //初始化作用域
+    fill(last_num_of_layer[0],last_num_of_layer[0]+50*50,-1); //初始化上一层作用域
     yyparse(); 
     if(root != NULL) {
         root->genNodeId();
         root->gen_label();
-        //root->printAST();
-        //IDlist.printInfo();
         root->gen_code();
     }
     return 0;

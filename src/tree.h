@@ -52,7 +52,7 @@ enum StmtType {
     STMT_SCANF,
     STMT_PRINTF,
     STMT_RET,
-    STMT_BLOCK,
+    STMT_BLOCK,  //循环体的语句块
 };
 
 enum ExprType{
