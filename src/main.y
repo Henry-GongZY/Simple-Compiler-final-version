@@ -1,310 +1,1372 @@
 %{
     #include "common.h"
+    #include "symboltable.h"
     #define YYSTYPE TreeNode *  
     TreeNode* root;
     extern int lineno;
+    extern idlist IDlist;
+    extern int layer;
+    extern int num_of_layer[100];
+    extern Type* TYPE_INT;
+    extern Type* TYPE_CHAR;
+    extern Type* TYPE_BOOL;
+    extern Type* TYPE_STRING;
+    extern Type* TYPE_VOID;
     int yylex();
     int yyerror( char const * );
 %}
-%token T_CHAR T_INT T_STRING T_BOOL T_DOUBLE T_VOID
 
-%token LOP_ASSIGN PLUS_ASSIGN MINUS_ASSIGN MULTI_ASSIGN DIVID_ASSIGN MOD_ASSIGN
+%start program
 
-%token SEMICOLON COMMA LBRACE RBRACE LPAREN RPAREN
+%token T_CHAR T_INT T_STRING T_BOOL T_VOID WHILE FOR IF ELSE MAIN SCANF PRINTF RETURN
 
-%token IDENTIFIER INTEGER CHAR STRING DOUBLE
+%token COMMA LPAREN RPAREN LBRACE RBRACE SEMICOLON REFERENCE 
 
-%token PLUS MINUS MULTI DIVIDE MOD SELFP SELFM AND OR NOT EQ
+%token LOP_ASSIGN PLUS_ASSIGN MINUS_ASSIGN MULTI_ASSIGN DIVID_ASSIGN 
 
-%token BT ST BEQ SEQ NEQ LG_AND LG_OR LG_NOT UMINUS
+%token OR AND NOT EQ NEQ BT ST BEQ SEQ
 
-%token FOR MAIN IF ELSE WHILE RETURN
+%token ADD SUB MUL DIV MOD
 
-%token PRINTF SCANF
+%token IDENTIFIER INTEGER CHAR BOOL STRING 
 
-%left LG_OR
-%left LG_AND
-%left OR
-%left XOR
-%left AND
-%left EQ NEQ
-%left BT ST BEQ SEQ
-%left PLUS MINUS
-%left MULTI DIVIDE MOD
-%left NOT LG_NOT
-%left UMINUS
+%left EQ NEQ BT ST BEQ SEQ
+
+%left ADD SUB
+
+%left MUL DIV MOD
+
+%right LOP_ASSIGN PLUS_ASSIGN MINUS_ASSIGN MULTI_ASSIGN DIVID_ASSIGN
+
+%right UMINUS UADD NOT
+
+%right SELFP_R SELFM_R
+
 %left SELFP SELFM
 
+%nonassoc LOWER_THAN_ELSE
+%nonassoc ELSE
 %%
-//程序
+
+//现可支持全局变量
 program
-: statements {root = new TreeNode(0, NODE_PROG); root->addChild($1);};
+: program function
+    {
+        root->addChild($2);
+    }
+| program decl_stmt SEMICOLON
+    {
+        root->addChild($2);
+    }
+| decl_stmt SEMICOLON
+    {
+        root=new TreeNode(0,NODE_PROG);
+        root->addChild($1);
+    }
+| function
+    {
+        root=new TreeNode(0,NODE_PROG);
+        root->addChild($1);
+    }
+;
 
-//语句序列
+function
+: T MAIN LPAREN RPAREN statements
+    {
+        $1->addSibling($2);
+        $1->addSibling($5);
+        $$=$1;
+    }
+;
+
 statements
-:  statement {$$=$1;}
-|  statement statements {$1->addSibling($2); $$=$1;}
+:  statement {
+        $$=$1;
+    }
+|  statements statement{   
+        $$->addSibling($2); 
+        $$=$1; 
+    }
 ;
 
-//语句
 statement
-: T MAIN LPAREN RPAREN statement {
-    $2->addChild($1);
-    $2->addChild($5);
-    $$ = $2;
-}
-| LBRACE statements RBRACE { $$ = $2; }
-| if_stmt {$$ = $1;} 
-| if_else_stmt {$$ = $1;}
-| for_stmt {$$ = $1;}
+: SEMICOLON  {$$ = new TreeNode(lineno, NODE_STMT); $$->stype = STMT_SKIP;}
+| decl_stmt SEMICOLON {$$ = $1;}
+| assign_stmt SEMICOLON {$$ = $1;}
+| scanf_stmt SEMICOLON {$$ = $1;}
+| printf_stmt SEMICOLON {$$ = $1;}
+| return SEMICOLON {$$ = $1;}
 | while_stmt {$$ = $1;}
-| function_call {$$=$1; }//函数调用
-| function_return {$$=$1; }//函数返回
-| scanf_stmt {$$ = $1;}
-| printf_stmt {$$ = $1;}
-| assign_stmt {$$ = $1;}
-| SEMICOLON  {
-    $$ = new TreeNode(lineno, NODE_STMT); 
-    $$->stype = STMT_SKIP;
-}
-| declaration SEMICOLON {$$ = $1;}
-| expr SEMICOLON {$$ = $1;}
+| if_stmt {$$ = $1;}
+| for_stmt {$$ = $1;}
+| LBRACE statements RBRACE {
+        TreeNode* node = new TreeNode(lineno,NODE_STMT); 
+        node->stype=STMT_BLOCK;
+        node->addChild($2);
+        $$=node;
+    }
 ;
 
-body 
-: statement{
-    TreeNode* node = new TreeNode($1->lineno, NODE_BODY);
-    node->addChild($1);
-    $$ = node;
-}
+return 
+: RETURN INTEGER{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_RET;
+        node->addChild($1);
+        node->addChild($2);
+        $$=node;
+    }
+;
 
-//while语句
+decl_stmt
+: T IDENTIFIER LOP_ASSIGN add_sub_expr{
+        TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
+        node->stype = STMT_DECL;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        node->addChild($4);
+        idnode *x=IDlist.find_by_node($2);
+        x->decl_or_refe=0;//将节点设置为声明节点
+        x->node_type=$1->type;//记录节点的类型
+        $2->type=$1->type; //把ID类型赋给ID
+        if(IDlist.check_redefine(x)==true){
+            cerr<<"Redefine variable "<<x->name<<" at line "<<$2->lineno<<endl;
+            exit(1);
+        }
+        if($4->type!=$2->type){
+            if($2->type==TYPE_INT) //支持类型转换
+            {
+                if($4->type==TYPE_BOOL){
+                    $4->type=TYPE_INT;
+                    $4->int_val=$4->b_val;
+                }
+                else if($4->type==TYPE_CHAR){
+                    $4->type=TYPE_INT;
+                    $4->int_val=$4->ch_val;
+                }
+                else{
+                    cerr<<"Wrong string type at line "<<$4->lineno<<endl;
+                    exit(1);
+                }
+            }
+            else if($2->type==TYPE_BOOL) 
+            {
+                if($4->type==TYPE_INT){
+                    $4->type=TYPE_BOOL;
+                    $4->b_val=$4->int_val;
+                }
+                else if($4->type==TYPE_CHAR){
+                    $4->type=TYPE_BOOL;
+                    $4->b_val=$4->ch_val;
+                }
+                else{
+                    cerr<<"Wrong string type at line "<<$4->lineno<<endl;
+                    exit(1);
+                }
+            }
+            else if($2->type==TYPE_CHAR)
+            {
+                if($4->type==TYPE_BOOL){
+                    $4->type=TYPE_CHAR;
+                    $4->ch_val=$4->b_val;
+                }
+                else if($4->type==TYPE_INT){
+                    $4->type=TYPE_CHAR;
+                    $4->ch_val=$4->int_val;
+                }
+                else{
+                    cerr<<"Wrong string type at line "<<$4->lineno<<endl;
+                    exit(1); 
+                }
+            }
+            else 
+            {
+                cerr<<"Wrong string type at line "<<$4->lineno<<endl;
+                exit(1);
+            }
+        }      
+        $$ = node;   
+    } 
+| T idlist {
+        TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
+        node->stype = STMT_DECL;
+        node->addChild($1);
+        node->addChild($2);
+        TreeNode* curr=$2;
+        while(curr!=nullptr){
+            if(curr->nodeType==NODE_VAR){
+                idnode* y=IDlist.find_by_node(curr);
+                //组合拳三件套
+                y->decl_or_refe=0;
+                y->node_type=$1->type;
+                if(IDlist.check_redefine(y)==true){
+                    cerr<<"Redefine variable "<<y->name<<" at line "<<$2->lineno<<endl;
+                    exit(1);
+                }                    
+            }
+            curr=curr->sibling;
+        }
+        $$ = node;   
+    }
+;
+
+assign_stmt 
+: unary_left_expr LOP_ASSIGN assign_stmt{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_ASSIGN;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| unary_left_expr PLUS_ASSIGN assign_stmt{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_ASSIGN;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| unary_left_expr MINUS_ASSIGN assign_stmt{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_ASSIGN;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| unary_left_expr MULTI_ASSIGN assign_stmt{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_ASSIGN;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| unary_left_expr DIVID_ASSIGN assign_stmt{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_ASSIGN;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| or_expr {$$=$1;}
+;
+
 while_stmt
-: WHILE LPAREN expr RPAREN body {
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_WHILE;
-    node->addChild($3);
-    node->addChild($5);
-    $$ = node;}
-;
-
-//for语句的不同情况
-for_stmt
-: 
-  FOR LPAREN do_assign SEMICOLON expr SEMICOLON do_assign RPAREN body {
-    TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
-    $$ = node;}
-| FOR LPAREN do_assign SEMICOLON expr SEMICOLON expr RPAREN body {
-    TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
-    $$ = node;}
-| FOR LPAREN declaration SEMICOLON expr SEMICOLON expr RPAREN body {
-    TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
-    $$ = node;}
-| FOR LPAREN declaration SEMICOLON expr SEMICOLON do_assign RPAREN body {
-    TreeNode* node = for_addChild($1->lineno, $3, $5, $7, $9);
-    $$ = node;}
-;
-
-
-//声明标识符
-function_declaration_id
-: T IDENTIFIER LOP_ASSIGN expr{  // declare and init
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_DECL;
-    node->addChild($1);
-    node->addChild($2);
-    node->addChild($4);
-    $$ = node;
-} 
-| T IDENTIFIER {
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_DECL;
-    node->addChild($1);
-    node->addChild($2);
-    $$ = node;}
-| T {$$=$1;}
-;
-
-
-//函数调用
-function_call
-: IDENTIFIER LPAREN function_call_idlist RPAREN SEMICOLON{
-    TreeNode* node = new TreeNode($1->lineno,NODE_STMT);
-    node->stype = STMT_FUNC_CALL;
-    node->addChild($1);
-    node->addChild($3);
-    $$ = node;
-}
-| IDENTIFIER LPAREN RPAREN SEMICOLON{
-    TreeNode* node = new TreeNode($1->lineno,NODE_STMT);
-    node->stype = STMT_FUNC_CALL;
-    node->addChild($1);
-    $$ = node;
-}
-;
-
-//函数调用标识符列表
-function_call_idlist
-: function_call_id { $$=$1; }
-| function_call_id COMMA function_call_idlist{ $1->addSibling($3); $$=$1;}
-;
-
-//函数调用标识符
-function_call_id
-: expr {$$ = $1; }
-;
-
-//函数返回
-function_return
-: RETURN SEMICOLON {$$ = $1;}
-| RETURN expr SEMICOLON { $1->addSibling($2); $$=$1; }
-
-//if else语句
-if_else_stmt
-: if_stmt else_stmt {$1->addSibling($2); $$ = $1;}
+:WHILE bool_stmt statement {
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype= STMT_WHILE;
+        //将其他类型转换为bool类型
+        if($2->type!=TYPE_BOOL){
+            if($2->type==TYPE_INT){
+                $2->type=TYPE_BOOL;
+                $2->b_val=$2->int_val;
+            }
+            else if($2->type==TYPE_CHAR){
+                $2->type=TYPE_BOOL;
+                $2->b_val=$2->ch_val;
+            }
+            else{
+                cerr<<"Wrong string type at line "<<$2->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
 ;
 
 if_stmt
-: IF LPAREN expr RPAREN body {
-    //开辟 if 空间
-    TreeNode* node = new TreeNode($1->lineno,NODE_STMT);
-    node->stype = STMT_IF;
-    node->addChild($3);
-    node->addChild($5);
-    $$ = node;
-}
+: IF bool_stmt statement %prec LOWER_THAN_ELSE{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_IF;
+        //将其他类型转换为bool类型
+        if($2->type!=TYPE_BOOL){
+            if($2->type==TYPE_INT){
+                $2->type=TYPE_BOOL;
+                $2->b_val=$2->int_val;
+            }
+            else if($2->type==TYPE_CHAR){
+                $2->type=TYPE_BOOL;
+                $2->b_val=$2->ch_val;
+            }
+            else{
+                cerr<<"Wrong string type at line "<<$2->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| IF bool_stmt statement ELSE statement{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_IF;
+        //将其他类型转换为bool类型
+        if($2->type!=TYPE_BOOL){
+            if($2->type==TYPE_INT){
+                $2->type=TYPE_BOOL;
+                $2->b_val=$2->int_val;
+            }
+            else if($2->type==TYPE_CHAR){
+                $2->type=TYPE_BOOL;
+                $2->b_val=$2->ch_val;
+            }
+            else{
+                cerr<<"Wrong string type at line "<<$2->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        node->addChild($4);
+        node->addChild($5);
+        $$=node;
+    }
 ;
 
-else_stmt
-: ELSE body {
-    TreeNode* node = new TreeNode($1->lineno,NODE_STMT);
-    node->stype = STMT_ELSE;
-    node->addChild($2);
-    $$ = node;
-}
+for_stmt
+: FOR LPAREN decl_stmt SEMICOLON or_expr SEMICOLON assign_stmt RPAREN statement {
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($3);
+        node->addChild($5);
+        node->addChild($7);
+        node->addChild($9);
+        TreeNode* x=$3->child;
+        vector<string> symbol;
+        while(x!=nullptr){
+            if(x->nodeType==NODE_VAR){
+                idnode* y=IDlist.find_by_node(x);
+                if(y==nullptr){
+                    cerr<<"Var not defined at line "<<$3->lineno<<endl;
+                    exit(1);
+                }
+                else{
+                    y->depth++;
+                    y->num_of_depth=y->next_num_of_depth;
+                    symbol.push_back(y->name);
+                }
+            }
+            x=x->sibling;
+        }
+        //遍历or_expr，把所有在前一个decl_stmt里定义的变量的depth+1,num_of_depth=next_num_of_depth
+        x=$5;
+        queue<TreeNode*>q;
+        q.push(x);
+        while(!q.empty()){
+            TreeNode *next=q.front()->child;
+            q.pop();
+            while(next!=nullptr){
+                if(next->nodeType==NODE_VAR){
+                    idnode* y=IDlist.find_by_node(next);
+                    vector<string>::iterator result=find(symbol.begin(),symbol.end(),y->name);
+                    if(result!=symbol.end()){
+                        y->depth++;
+                        y->num_of_depth=y->next_num_of_depth;
+                    }
+                }
+                q.push(next);
+                next=next->sibling;
+            }
+        }
+        //遍历assign_stmt，把所有在前一个decl_stmt里定义的变量的depth+1,num_of_depth=next_num_of_depth
+        x=$7;
+        q.push(x);
+        while(!q.empty()){
+            TreeNode *next=q.front()->child;
+            q.pop();
+            while(next!=nullptr){
+                if(next->nodeType==NODE_VAR){
+                    idnode* y=IDlist.find_by_node(next);
+                    vector<string>::iterator result=find(symbol.begin(),symbol.end(),y->name);
+                    if(result!=symbol.end()){
+                        y->depth++;
+                        y->num_of_depth=y->next_num_of_depth;
+                    }
+                }
+                q.push(next);
+                next=next->sibling;
+            }
+        }
+        $$=node;
+    }
+| FOR LPAREN assign_stmt SEMICOLON or_expr SEMICOLON assign_stmt RPAREN statement { //111
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($3);
+        node->addChild($5);
+        node->addChild($7);
+        node->addChild($9);
+        $$=node;
+    }
+| FOR LPAREN SEMICOLON SEMICOLON RPAREN statement RPAREN{ //000
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($6);
+        $$=node;
+
+    }
+| FOR LPAREN SEMICOLON or_expr SEMICOLON assign_stmt RPAREN statement { //011
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($4);
+        node->addChild($6);
+        node->addChild($8);
+        $$=node;
+    }
+| FOR LPAREN assign_stmt SEMICOLON SEMICOLON assign_stmt RPAREN statement { //101
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($3);
+        node->addChild($6);
+        node->addChild($8);
+        $$=node;
+    }
+| FOR LPAREN assign_stmt SEMICOLON or_expr SEMICOLON RPAREN statement { //110
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($3);
+        node->addChild($5);
+        node->addChild($8);
+        $$=node;
+    }
+| FOR LPAREN assign_stmt SEMICOLON SEMICOLON RPAREN statement { //100
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($3);
+        node->addChild($7);
+        $$=node;
+    }
+| FOR LPAREN SEMICOLON or_expr SEMICOLON RPAREN statement { //010
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($4);
+        node->addChild($7);
+        $$=node;
+    }
+| FOR LPAREN SEMICOLON SEMICOLON assign_stmt RPAREN statement { //001
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_FOR;
+        node->addChild($1);
+        node->addChild($5);
+        node->addChild($7);
+        $$=node;
+    }
 ;
 
-//输入
 scanf_stmt
-: SCANF LPAREN function_call_idlist RPAREN SEMICOLON {$1->addChild($3); $$=$1;}
-| SCANF LPAREN RPAREN SEMICOLON {$$=$1;}
+: SCANF LPAREN STRING COMMA scanf_list RPAREN{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        TreeNode* curr=$5;
+        while(curr!=nullptr){
+            //在符号表中找到对应节点,找不到则证明节点为未定义节点
+            if(curr->nodeType==NODE_VAR){
+                idnode* x=IDlist.find_by_node(curr);
+                idnode* y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->count);
+                if(y==nullptr){
+                    cerr<<"Undefined var "<<x->name<<" at line "<<$5->lineno<<endl;
+                    exit(1);
+                }
+                x->decl_node=y;
+                x->node_type=y->node_type; 
+                curr->type=y->node_type;             
+            }
+            curr = curr->sibling;
+        }
+        node->stype=STMT_SCANF;
+        node->addChild($1);
+        node->addChild($3);
+        node->addChild($5);
+        $$ = node;
+    }
 ;
 
-//输出
 printf_stmt
-: PRINTF LPAREN function_call_idlist RPAREN SEMICOLON {$1->addChild($3); $$=$1;}
-| PRINTF LPAREN RPAREN SEMICOLON {$$=$1;}
+: PRINTF LPAREN STRING COMMA printf_list RPAREN{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        TreeNode* curr=$5;
+        while(curr!=nullptr){
+            //在符号表中找到对应节点,找不到则证明节点为未定义节点
+            if(curr->nodeType==NODE_VAR){
+                idnode* x=IDlist.find_by_node(curr);
+                idnode* y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->count);
+                if(y==nullptr){
+                    cerr<<"Undefined variable "<<x->name<<" at line "<<$5->lineno<<endl;
+                    exit(1);
+                }
+                x->decl_node=y; 
+                x->node_type=y->node_type;  
+                curr->type=y->node_type;              
+            }
+            curr=curr->sibling;
+        }
+        node->stype=STMT_PRINTF;       
+        node->addChild($1);
+        node->addChild($3);
+        node->addChild($5);
+        $$=node;
+    }
+| PRINTF LPAREN STRING RPAREN{
+        TreeNode* node=new TreeNode($1->lineno,NODE_STMT);
+        node->stype=STMT_PRINTF;
+        node->addChild($1);
+        node->addChild($3);
+        $$=node;
+    }
 ;
 
-//声明
-declaration
-: T IDENTIFIER LOP_ASSIGN expr{  //int a = 表达式
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_DECL;
-    node->addChild($1);
-    node->addChild($2);
-    node->addChild($4);
-    $$ = node;   
-} 
-| T IDLIST { //int 标识符列表
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_DECL;
-    node->addChild($1);
-    node->addChild($2);
-    $$ = node;   
-}
+scanf_list
+: REFERENCE IDENTIFIER{$$=$2;}
+| scanf_list COMMA REFERENCE IDENTIFIER{
+        $1->addSibling($4);
+        $$=$1;
+    }
 ;
 
-IDLIST
-: IDENTIFIER COMMA IDLIST {
-    $1->addSibling($3);
-    $$ = $1;
-}
-| IDENTIFIER { $$ = $1; }
+printf_list
+: or_expr{$$=$1;}
+| printf_list COMMA or_expr{
+        $$=$1;
+        $1->addSibling($3);
+    }
 ;
 
-assign_stmt
-: do_assign SEMICOLON{
-    $$=$1;
-}
-
-//几种赋值or计算赋值
-do_assign
-: IDENTIFIER LOP_ASSIGN expr {
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_ASSIGN;
-    node->addChild($1);
-    node->addChild($3);
-    $$ = node;}
-| IDENTIFIER PLUS_ASSIGN expr {
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_PLUS_ASSIGN;
-    node->addChild($1);
-    node->addChild($3);
-    $$ = node;}
-| IDENTIFIER MINUS_ASSIGN expr {
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_MINUS_ASSIGN;
-    node->addChild($1);
-    node->addChild($3);
-    $$ = node;}
-| IDENTIFIER MULTI_ASSIGN expr {
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_MULTI_ASSIGN;
-    node->addChild($1);
-    node->addChild($3);
-    $$ = node;}
-| IDENTIFIER DIVID_ASSIGN expr {
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_DIVID_ASSIGN;
-    node->addChild($1);
-    node->addChild($3);
-    $$ = node;}
-| IDENTIFIER MOD_ASSIGN expr {
-    TreeNode* node = new TreeNode($1->lineno, NODE_STMT);
-    node->stype = STMT_MOD_ASSIGN;
-    node->addChild($1);
-    node->addChild($3);
-    $$ = node;}
+idlist
+: idlist COMMA IDENTIFIER{
+        $$=$1;
+        $$->addSibling($3);
+    }
+| IDENTIFIER {$$=$1;}   
 ;
 
-//表达式
+bool_stmt
+: LPAREN or_expr RPAREN{
+        $$=$2;
+    }
+;
+or_expr
+: or_expr OR and_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_OR;
+        node->type=TYPE_BOOL;
+        //类型检查
+        if($1->type!=TYPE_BOOL){
+            if($1->type==TYPE_INT){
+                $1->type=TYPE_BOOL;
+                $1->b_val=$1->int_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_BOOL;
+                $1->b_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_BOOL){
+            if($3->type==TYPE_INT){
+                $3->type=TYPE_BOOL;
+                $3->b_val=$3->int_val;
+            }
+            else if($3->type==TYPE_CHAR){
+                $3->type=TYPE_BOOL;
+                $3->b_val=$3->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->b_val=($1->b_val)||($3->b_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }   
+| and_expr{
+        $$=$1;
+    }
+;
+
+and_expr
+: and_expr AND EQ_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_AND;
+        node->type=TYPE_BOOL;
+        //类型检查
+        if($1->type!=TYPE_BOOL){
+            if($1->type==TYPE_INT){
+                $1->type=TYPE_BOOL;
+                $1->b_val=$1->int_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_BOOL;
+                $1->b_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_BOOL){
+            if($3->type==TYPE_INT){
+                $3->type=TYPE_BOOL;
+                $3->b_val=$3->int_val;
+            }
+            else if($3->type==TYPE_CHAR){
+                $3->type=TYPE_BOOL;
+                $3->b_val=$3->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->b_val=($1->b_val)&&($3->b_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| EQ_expr{
+        $$=$1;
+    }
+;
+
+EQ_expr
+: EQ_expr EQ relation_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_EQ;
+        node->type=TYPE_BOOL;
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->b_val=($1->int_val)==($3->int_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| EQ_expr NEQ relation_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_EQ;
+        node->type=TYPE_BOOL;
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->b_val=($1->int_val)!=($3->int_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| relation_expr {
+        $$=$1;
+    }
+;
+
+relation_expr
+: relation_expr BT add_sub_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_RELATION;
+        node->type=TYPE_BOOL;
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->b_val=($1->int_val)>($3->int_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| relation_expr ST add_sub_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_RELATION;
+        node->type=TYPE_BOOL;
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->b_val=($1->int_val)<($3->int_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| relation_expr BEQ add_sub_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_RELATION;
+        node->type=TYPE_BOOL;
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->b_val=($1->int_val)>=($3->int_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| relation_expr SEQ add_sub_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_RELATION;
+        node->type=TYPE_BOOL;
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR){
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->b_val=($1->int_val)<=($3->int_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| add_sub_expr{
+        $$=$1;
+    }
+;
+
+add_sub_expr
+: add_sub_expr ADD mul_div_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL)
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR)
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL) 
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$1->b_val;
+            }
+            else if($3->type==TYPE_CHAR) 
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$1->ch_val;
+            }
+            else  
+            {
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=TYPE_INT;
+        node->etype=EXPR_ADD_SUB;
+        node->int_val=$1->int_val+$3->int_val;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| add_sub_expr SUB mul_div_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL)
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR)
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else 
+            {
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL)
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$1->b_val;
+            }
+            else if($3->type==TYPE_CHAR)
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=TYPE_INT;
+        node->etype=EXPR_ADD_SUB;
+        node->int_val=$1->int_val-$3->int_val;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| mul_div_expr{
+        $$=$1;
+    }
+;
+
+
+mul_div_expr
+: mul_div_expr MUL unary_left_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL) 
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR)
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else 
+            {
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL)
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR)
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=TYPE_INT;
+        node->etype=EXPR_MUL_DIV;
+        node->int_val=($1->int_val)*($3->int_val);
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| mul_div_expr DIV unary_left_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL)
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR)
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else 
+            {
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL)
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR) 
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=TYPE_INT;
+        node->etype=EXPR_MUL_DIV;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| mul_div_expr MOD unary_left_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL)
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR) 
+            {
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else 
+            {
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        if($3->type!=TYPE_INT){
+            if($3->type==TYPE_BOOL)
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$3->b_val;
+            }
+            else if($3->type==TYPE_CHAR) 
+            {
+                $3->type=TYPE_INT;
+                $3->int_val=$3->ch_val;
+            }
+            else 
+            {
+                cerr<<"Wrong type at line "<<$3->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=TYPE_INT;
+        node->etype=EXPR_MUL_DIV;
+        node->addChild($1);
+        node->addChild($2);
+        node->addChild($3);
+        $$=node;
+    }
+| unary_left_expr{
+        $$=$1;
+    }
+; 
+
+unary_left_expr
+: SUB unary_left_expr %prec UMINUS{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_UNARY_LEFT;
+        //类型检查
+        if($2->type!=TYPE_INT){
+            if($2->type==TYPE_BOOL)
+            {
+                $2->type=TYPE_INT;
+                $2->int_val=$2->b_val;
+            }
+            else if($2->type==TYPE_CHAR)
+            {
+                $2->type=TYPE_INT;
+                $2->int_val=$2->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$2->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=$2->type;
+        node->int_val=-($2->int_val);
+        node->addChild($1);
+        node->addChild($2);
+        $$=node;
+    }
+| ADD unary_left_expr %prec UADD{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_UNARY_LEFT;
+        //类型检查
+        if($2->type!=TYPE_INT){
+            if($2->type==TYPE_BOOL) 
+            {
+                $2->type=TYPE_INT;
+                $2->int_val=$2->b_val;
+            }
+            else if($2->type==TYPE_CHAR)
+            {
+                $2->type=TYPE_INT;
+                $2->int_val=$2->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$2->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=$2->type;
+        node->int_val=$2->int_val;
+        node->addChild($1);
+        node->addChild($2);
+        $$=node;
+    }
+| NOT unary_left_expr{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_UNARY_LEFT;
+        //类型检查
+        if($2->type!=TYPE_BOOL){
+            if($2->type==TYPE_INT)
+            {
+                $2->type=TYPE_BOOL;
+                $2->b_val=$2->int_val;
+            }
+            else if($2->type==TYPE_CHAR)
+            {
+                $2->type=TYPE_INT;
+                $2->b_val=$2->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$2->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=$2->type;
+        node->b_val=!($2->b_val);
+        node->addChild($1);
+        node->addChild($2);
+        $$=node;
+    }
+| SELFP unary_left_expr %prec SELFP_R{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_UNARY_LEFT;
+        //类型检查
+        if($2->type!=TYPE_INT){
+            if($2->type==TYPE_BOOL)
+            {
+                $2->type=TYPE_INT;
+                $2->int_val=$2->b_val;
+            }
+            else if($2->type==TYPE_CHAR)
+            {
+                $2->type=TYPE_INT;
+                $2->int_val=$2->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$2->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=$2->type;
+        node->int_val=$2->int_val+1;
+        node->addChild($1);
+        node->addChild($2);
+        $$=node;
+    }
+| SELFM unary_left_expr %prec SELFM_R{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_UNARY_LEFT;
+        //类型检查
+        if($2->type!=TYPE_INT){
+            if($2->type==TYPE_BOOL)
+            {
+                $2->type=TYPE_INT;
+                $2->int_val=$2->b_val;
+            }
+            else if($2->type==TYPE_CHAR)
+            {
+                $2->type=TYPE_INT;
+                $2->int_val=$2->ch_val;
+            }
+            else
+            {
+                cerr<<"Wrong type at line "<<$2->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=$2->type;
+        node->int_val=$2->int_val-1;
+        node->addChild($1);
+        node->addChild($2);
+        $$=node;
+    }
+| unary_right_expr{
+        $$=$1;
+    }
+;
+
+unary_right_expr
+: unary_right_expr SELFP{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_POSTFIX;
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=$1->type;
+        node->int_val=$1->int_val+1;
+        node->addChild($1);
+        node->addChild($2);
+        $$=node;
+    }
+| unary_right_expr SELFM{
+        TreeNode* node=new TreeNode($1->lineno,NODE_EXPR);
+        node->etype=EXPR_POSTFIX;
+        //类型检查
+        if($1->type!=TYPE_INT){
+            if($1->type==TYPE_BOOL){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->b_val;
+            }
+            else if($1->type==TYPE_CHAR){
+                $1->type=TYPE_INT;
+                $1->int_val=$1->ch_val;
+            }
+            else{
+                cerr<<"Wrong type at line "<<$1->lineno<<endl;
+                exit(1);
+            }
+        }
+        node->type=$1->type;
+        node->int_val=$1->int_val-1;
+        node->addChild($1);
+        node->addChild($2);
+        $$=node;
+    }
+| expr{
+        $$=$1;
+    }
+;
+
 expr
-: LPAREN expr RPAREN  { $$ = $2; }
-| expr PLUS expr	{ $$ = expr_addChild($1, $2, $3); } //ok
-| expr MINUS expr	{ $$ = expr_addChild($1, $2, $3); } //ok
-| expr MULTI expr	{ $$ = expr_addChild($1, $2, $3); } //ok
-| expr DIVIDE expr	{ $$ = expr_addChild($1, $2, $3); } //ok
-| expr MOD expr	    { $$ = expr_addChild($1, $2, $3); } //ok
-| expr SELFM        { $$ = expr_addChild($1, $2, NULL); } //ok
-| expr SELFP        { $$ = expr_addChild($1, $2, NULL); } //ok
-| expr AND expr     { $$ = expr_addChild($1, $2, $3); }   //ok
-| expr OR expr      { $$ = expr_addChild($1, $2, $3); }   //ok
-| NOT expr          { $$ = expr_addChild($2, $1, NULL); } //ok
-| expr XOR expr     { $$ = expr_addChild($1, $2, $3); } //not ready
-| expr EQ expr      { $$ = expr_addChild($1, $2, $3); } //ok
-| expr BT expr      { $$ = expr_addChild($1, $2, $3); } //ok
-| expr ST expr      { $$ = expr_addChild($1, $2, $3); } //ok
-| expr BEQ expr     { $$ = expr_addChild($1, $2, $3); } //ok
-| expr SEQ expr     { $$ = expr_addChild($1, $2, $3); } //ok
-| expr NEQ expr     { $$ = expr_addChild($1, $2, $3); } //ok
-| expr LG_AND expr  { $$ = expr_addChild($1, $2, $3); }  //not ready
-| expr LG_OR expr   { $$ = expr_addChild($1, $2, $3); }  //not ready
-| LG_NOT expr       { $$ = expr_addChild($2, $1, NULL); } //not ready
-| MINUS expr %prec UMINUS   { $$ = expr_addChild($2, $1, NULL); $$->type = $2->type;}
-| IDENTIFIER     { $$ = $1; $$->type = $1->type;}
-| INTEGER        { $$ = $1; $$->type = TYPE_INT;}
-| DOUBLE         { $$ = $1; $$->type = TYPE_DOUBLE;}
-| CHAR           { $$ = $1; $$->type = TYPE_CHAR;}
-| STRING         { $$ = $1; $$->type = TYPE_STRING;}
+: LPAREN or_expr RPAREN{
+        $$ = $2;
+    }
+| IDENTIFIER {
+        //定义检查
+        idnode *x=IDlist.find_by_node($1);
+        idnode *y=IDlist.find_decl(x->name,x->depth,x->num_of_depth,x->count);
+        if(y==nullptr){
+            cerr<<"Undefined variable "<<x->name<<" at line "<<$1->lineno<<endl;
+            exit(1);
+        }
+        else{
+            x->decl_node=y;
+            x->node_type=y->node_type;
+            $1->type=y->node_type;
+        }
+        $$ = $1;
+    }
+| INTEGER {
+        $1->type=TYPE_INT;
+        $$ = $1;
+    }
+| CHAR {
+        $1->type=TYPE_CHAR;
+        $$ = $1;
+    }
+| STRING {
+        $1->type=TYPE_STRING;
+        $$ = $1;
+    }
+| BOOL {
+        $1->type=TYPE_BOOL;
+        $$ = $1;
+    }
 ;
 
-//类型
 T: T_INT {$$ = new TreeNode(lineno, NODE_TYPE); $$->type = TYPE_INT;} 
 | T_CHAR {$$ = new TreeNode(lineno, NODE_TYPE); $$->type = TYPE_CHAR;}
 | T_BOOL {$$ = new TreeNode(lineno, NODE_TYPE); $$->type = TYPE_BOOL;}
-| T_STRING {$$ = new TreeNode(lineno,NODE_TYPE); $$->type = TYPE_STRING;}
-| T_DOUBLE {$$ = new TreeNode(lineno, NODE_TYPE); $$->type = TYPE_DOUBLE;}
+| T_STRING {$$ = new TreeNode(lineno, NODE_TYPE); $$->type = TYPE_STRING;}
 | T_VOID {$$ = new TreeNode(lineno, NODE_TYPE); $$->type = TYPE_VOID;}
 ;
 

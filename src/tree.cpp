@@ -1,15 +1,21 @@
 #ifndef TREE_CPP
 #define TREE_CPP
 #include "tree.h"
-int nodeid = 0;
-int label_seq = 0;
-map<string,Type*> SymbolTable;
+#include "symboltable.h"
+
+extern idlist IDlist;
+extern Type* TYPE_INT;
+extern Type* TYPE_CHAR;
+extern Type* TYPE_BOOL;
+extern Type* TYPE_STRING;
+extern Type* TYPE_VOID;
 
 void TreeNode::addChild(TreeNode* child) {
-    if (this->child == nullptr)   //没有孩子添加孩子
-        this->child = child;
+    if(this->child==nullptr){
+         this->child=child;
+    }
     else{
-        this->child->addSibling(child);   //有孩子添加为孩子的兄弟
+        this->child->addSibling(child);
     }
 }
 
@@ -25,599 +31,1133 @@ void TreeNode::addSibling(TreeNode* sibling){
 }
 
 TreeNode::TreeNode(int lineno, NodeType type) {
-    this->lineno = lineno;
-    this->nodeType = type;
-    this->genNodeId();
+    this->lineno=lineno;
+    this->nodeType=type;
 }
 
 void TreeNode::genNodeId() {
-    this->nodeID = nodeid;
-    nodeid++;
-}
-
-void TreeNode::printNodeInfo(TreeNode* t){
-    //具体逻辑是根据不同的输入选择不同的函数进行字符串化输出
-    string type = "";
-    string const_type;
-    switch (t->nodeType){
-        case NODE_STMT:
-            type = sType2String(t->stype);
-            break;
-        case NODE_EXPR:
-            if(t->type == nullptr){
-                type = "OP: " + opType2String(t->optype);
-            } else{
-                type = "OP: " + opType2String(t->optype) + " type: "+ t->type->getTypeInfo();
-            }
-            break;
-        case NODE_TYPE:
-            type = t->type->getTypeInfo();
-            break;
-        case NODE_VAR:
-            if(t->type == nullptr){
-                type = "var name: " + t->var_name;
-            } else{
-                type = "var name: " + t->var_name + " type: "+ t->type->getTypeInfo();
-            }
-            break;
-        case NODE_CONST:
-            const_type = t->type->getTypeInfo();
-            if(const_type == "int"){
-                type = to_string(t->int_val);
-            }
-            else if(const_type == "string"){
-                type = t->str_val;
-            }
-            else if(const_type == "bool"){
-                type = to_string(t->b_val);
-            }
-            else if(const_type == "double"){
-                type = to_string(t->d_val);
-            }
-            else if(const_type == "char"){
-                type = to_string(t->ch_val);
-            }
-            type = const_type+":"+type;
-            break;
-        default:
-            break;
-    }
-    cout << "lno@" << t->lineno << "  "<< "@" << t->nodeID << "  " << nodeType2String(t->nodeType) << "  " << type << "  children:[";
-    t->printChildrenId();
-    cout << "]" <<"  ";
-    cout<<"label:"<<" begin:"<<" "<<t->label.begin_label<<" false:"<<" "<<t->label.false_label<<" next:"<<" "<<t->label.next_label<<" true:"<<" "<<t->label.true_label<<endl;
-}
-
-void TreeNode::printChildrenId(){
-    if(this->child!=nullptr){
-        TreeNode* child = this->child;
-        while(child!=nullptr){
-            cout<<"@"<<child->nodeID<<" ";
-            child = child->sibling;
+    this->nodeID=0;
+    int count=1;
+    queue<TreeNode*> q;
+    q.push(this);
+    while(!q.empty()){
+        TreeNode *next=q.front()->child;//下一层
+        q.pop();
+        while(next!=nullptr){
+            next->nodeID=count++;//同层所有结点赋值
+            q.push(next);
+            next=next->sibling;
         }
     }
 }
 
-void TreeNode::printAST(){
-    printNodeInfo(this);
-    for (TreeNode *t2 = this->child; t2; t2 = t2->sibling)
-        t2->printAST();
-}
-
-void TreeNode::printData(){
-    this->tableInsert();
-    this->doType();
-    this->typeCheck();
-    this->gen_label();
-    //this->printAST();
-    //this->gen_header();
-    //this->gen_decl();
-    this->tablePrint();
-}
-
-
-string TreeNode::new_label()
+void TreeNode::printNodeInfo()
 {
-	char tmp[20];
-	sprintf(tmp, "@%d", label_seq);
-	label_seq++;
-	return tmp;
+    cout << "line:";
+    cout.setf(ios::left);
+    cout.width(4);
+    cout<< this->lineno << " Node_id:";
+    cout.width(4);
+    cout<< this->nodeID;
+    this->printSpecialInfo();
+    cout << " child: ";
 }
 
-void TreeNode::stmt_get_label(){
+void TreeNode::printChildrenId()
+{
+    TreeNode *next = this->child;
+    if (next != nullptr){
+        cout << next->nodeID << " ";
+        TreeNode *curr = next->sibling;
+        while (curr != nullptr) {
+            cout << curr->nodeID<<" ";
+            curr = curr->sibling;
+        }
+    } else {
+        cout<<"NULL";
+    } 
+    cout<<endl;
+}
+
+void TreeNode::printAST() {
+    this->printNodeInfo();
+    this->printChildrenId();
+    if(this->label.begin_label!=""){
+        cout<<"BEGIN:"<<this->label.begin_label<<"  ";
+    }
+    if(this->label.next_label!=""){
+        cout<<"NEXT:"<<this->label.next_label<<"  ";
+    }
+    if(this->label.true_label!=""){
+        cout<<"TRUE:"<<this->label.true_label<<"  ";
+    }
+    if(this->label.false_label!=""){
+        cout<<"FALSE:"<<this->label.false_label<<"  ";
+    }
+    cout<<endl;
+    TreeNode *child=this->child;
+    if(child!=nullptr){
+        child->printAST();
+        TreeNode *curr=child->sibling;
+        while(curr!=nullptr){
+            curr->printAST();
+            curr=curr->sibling;
+        }
+    }
+    
+}
+
+
+void TreeNode::printSpecialInfo() {
+    switch (this->nodeType)
+    {
+    case NODE_CONST:
+        cout << " CONST:";
+        cout.width(23);
+        if (this->type->type == VALUE_STRING)
+            cout << this->str_val;
+        else if (this->type->type == VALUE_INT)
+            cout << this->int_val;
+        else if (this->type->type == VALUE_CHAR)
+            cout << this->ch_val;
+        else if (this->type->type == VALUE_BOOL)
+        {
+            if (this->b_val == 1)
+                cout << "true";
+            else
+                cout << "false";
+        }
+        break;
+    case NODE_VAR:
+        cout << " VAR:";
+        cout.width(25);
+        cout << this->var_name;
+        break;
+    case NODE_EXPR:
+        cout << " EXPR:";
+        cout.width(24);
+        cout<<this->exprType2String();
+        break;
+    case NODE_STMT:
+        cout << " STMT:";
+        cout.width(24);
+        cout<<this->sType2String();
+        break;
+    case NODE_TYPE:
+        cout << " TYPE:";
+        cout.width(24);
+        cout << this->type->getTypeInfo();
+        break;
+    case NODE_PROG:
+        cout.width(30);
+        cout << " PROGRAM";
+        break;
+    case NODE_OP:
+        cout << " OP:";
+        cout.width(26);
+        cout << this->op;
+        break;
+    case NODE_KEYWORD:
+        cout<<" KEYWORD:";
+        cout.width(21);
+        cout<<this->var_name;
+        break;
+    default:
+        break;
+    }
+}
+
+string TreeNode::opType2String(){
+    switch (this->optype)
+    {
+    case OP_EQ:
+        return "=";
+    case OP_ST:
+        return "<";
+    case OP_BT:
+        return ">";
+    case OP_SEQ:
+        return "<=";
+    case OP_BEQ:
+        return ">=";
+    case OP_ASSIGN:
+        return "=";
+    case OP_PLUS_ASSIGN:
+        return "+=";
+    case OP_MINUS_ASSIGN:
+        return "-=";
+    case OP_MULTITI_ASSIGN:
+        return "*=";
+    case OP_DIVIDID_ASSIGN:
+        return "/=";
+    default:
+        break;
+    }
+}
+
+string TreeNode::sType2String(){
     switch(this->stype){
-        case STMT_WHILE:
-        {
-            //判断语句
-            TreeNode *e = this->child;
-            //循环体
-			TreeNode *s = this->child->sibling;
-            
-            if (this->label.begin_label == "")
-                this->label.begin_label = new_label();
+    case STMT_SKIP:
+        return "SKIP";
+    case STMT_DECL:
+        return "DECL";
+    case STMT_ASSIGN:
+        return "ASSIGN";
+    case STMT_WHILE:
+        return "WHILE";
+    case STMT_IF:
+        return "IF";
+    case STMT_FOR:
+        return "FOR";
+    case STMT_SCANF:
+        return "SCANF";
+    case STMT_PRINTF:
+        return "PRINTF";
+    case STMT_RET:
+        return "RETURN";
+    case STMT_BLOCK:
+        return "BLOCK";
+    default:
+        break;
+    }
+}
 
-            s->label.next_label = this->label.begin_label;
+string TreeNode::exprType2String(){
+    switch (this->etype){
+    case EXPR_OR:
+        return "OR";
+    case EXPR_AND:
+        return "AND";
+    case EXPR_EQ:
+        return "EQ";
+    case EXPR_RELATION:
+        return "RELATION";
+    case EXPR_ADD_SUB:
+        return "ADD";
+    case EXPR_MUL_DIV:
+        return "MUL";
+    case EXPR_UNARY_LEFT:
+        return "UNARY";
+    case EXPR_POSTFIX:
+        return "POSTFIX";
+    default:
+        break;
+    }
+}
 
-            s->label.begin_label = e->label.true_label = new_label();
+void TreeNode::gen_code(){
+    //声明常量
+    cout<<".section .rodata"<<endl;
+    this->gen_const();
+    //声明全局变量
+    cout<<endl<<"\t.bss"<<endl;
+    this->gen_var();
+    //声明表达式临时变量
+    this->gen_temp_var();
+    //main函数定义
+    cout<<endl<<"\t.text"<<endl<<"\t.globl main"<<endl<<"\t.type main, @function"<<endl<<"main:"<<endl;
+    //声明函数内容
+    this->gen_content();
+}
 
-            if (this->label.next_label == "")
-				this->label.next_label = new_label();
 
-			e->label.false_label = this->label.next_label;
-			if (this->sibling)
-				this->sibling->label.begin_label = this->label.next_label;
-
-            e->recursive_get_label();
-            s->recursive_get_label();
-
-            break;
-        }
-        case STMT_IF:
-        {
-            //判断语句
-            TreeNode *f1 = this->child;
-            //执行语句
-			TreeNode *lang = this->child->sibling;
-
-            if (this->label.begin_label == "")
-                this->label.begin_label = new_label();
-            
-            lang->label.begin_label = f1->label.true_label = new_label();
-
-            if (this->label.next_label == "")
-                f1->label.false_label = lang->label.next_label = this->label.next_label = new_label();
-            
-            if (this->sibling)
-				this->sibling->label.begin_label = this->label.next_label;
-            
-            f1->recursive_get_label();
-            lang->recursive_get_label();
-            break;
-        }
-        case STMT_ELSE:
-        {
-            this->label.next_label = new_label();
-
-            if (this->sibling)
-				this->sibling->label.begin_label = this->label.next_label;
-            
-            TreeNode* curr = this->child;
-            for(curr;curr->sibling!=nullptr;curr = curr->sibling){
-                curr->recursive_get_label();
+void TreeNode::gen_const(){
+    int count=0;
+    queue<TreeNode*> q;
+    q.push(this);
+    while(!q.empty()){
+        TreeNode *next=q.front();//根节点放入队列
+        q.pop();
+        while(next!=nullptr){
+            //字符串常量需要在rodata段开空间存储
+            if(next->nodeType==NODE_CONST&&next->type->type==VALUE_STRING){
+                cout<<"STRING"<<count<<":"<<endl;
+                cout<<"\t.string "<<next->str_val<<endl;
+                next->count_string=count;
+                count++;
             }
-
-            break;
-        }
-        // case STMT_FOR:
-        // {
-        //     //循环的三个语句
-        //     TreeNode* f1 = this->child;
-        //     TreeNode* f2 = this->child->sibling;
-        //     TreeNode* f3 = this->child->sibling->sibling;
-        //     //循环体
-        //     TreeNode* lang = this->child->sibling->sibling->sibling;
-            
-        //     break;
-        // }
-        default:
-        {
-            TreeNode* curr = this->child;
-            for(curr;curr->sibling!=nullptr;curr = curr->sibling){
-                curr->recursive_get_label();
-            }
+            q.push(next->child);
+            next=next->sibling;
         }
     }
 }
 
-void TreeNode::expr_get_label(){
-    if(this->type->getTypeInfo() != "bool")
-        return;
-    
-    TreeNode* leftop = this->child;
-    TreeNode* rightop;
-    if(this->child->sibling !=nullptr){
-        rightop = this->child->sibling;
-    } else rightop = nullptr;
-    leftop->recursive_get_label();
-    if(rightop!=nullptr){
-        rightop->recursive_get_label();
+void TreeNode::gen_var(){
+    queue<TreeNode*> q;
+    q.push(this);
+    while(!q.empty()){
+        TreeNode *next=q.front();//根节点放入队列
+        q.pop();
+        while(next!=nullptr){
+            //如果该节点是变量类型的节点
+            if(next->nodeType==NODE_VAR){
+                idnode* x=IDlist.find_by_node(next);
+                //该变量是声明节点且目前没有开空间，则为其开辟全局变量空间
+                if(x->decl_or_refe==0){
+                    cout<<"_"<<next->var_name<<":"<<endl<<"\t.zero 4"<<endl<<"\t.align 4"<<endl;
+                }
+            }
+            q.push(next->child);
+            next=next->sibling;
+        }
     }
     return;
-    // if(sType2String(this->stype) == "&&"){
-    //     leftop->label.true_label = new_label();
-    //     rightop->label.true_label = this->label.true_label;
-    //     leftop->label.false_label = rightop->label.false_label = this->label.false_label;
-    // }
-    
 }
 
-void TreeNode::recursive_get_label()
-{
-	if (this->nodeType == NODE_STMT)
-		this->stmt_get_label();
-	else if (this->nodeType == NODE_EXPR)
-		this->expr_get_label();
+void TreeNode::gen_temp_var(){
+    int count=0;
+    queue<TreeNode*> q;
+    q.push(this);
+    while(!q.empty()){
+        TreeNode *next=q.front();//根节点放入队列
+        q.pop();
+        while(next!=nullptr){
+            //表达式中如a+b、a*b之类需要生成临时变量
+            if(next->nodeType==NODE_EXPR){
+                //前缀++、--，后缀++、--都不需要另开空间，但前缀+、-和!都需要开空间
+                if(next->etype!=EXPR_POSTFIX&&(next->etype!=EXPR_UNARY_LEFT||(next->child->optype!=OP_SELFP&&next->child->optype!=OP_SELFM))){
+                    next->var_name="temp"+to_string(count);//给表达式制定一个变量名存起来                    
+                    cout<<"_temp"<<count<<":"<<endl;
+                    cout<<"\t.zero 4"<<endl<<"\t.align 4"<<endl;
+                    count++;
+                }
+            }
+            q.push(next->child);
+            next=next->sibling;
+        }
+    }
+    return;
 }
 
 void TreeNode::gen_label(){
-	this->label.begin_label = "_start";
-	TreeNode* curr = this->child->child;
-    while(curr!=nullptr){
-        curr->recursive_get_label();
-        curr = curr->sibling;
+    stack<TreeNode*> s;
+    s.push(this);
+    while(!s.empty()){
+        TreeNode *next=s.top();//根节点放入栈中
+        s.pop();
+        while(next!=nullptr){
+            if(next->nodeType==NODE_STMT){
+                if (next->stype==STMT_WHILE){
+                    //开始标签
+                    if(next->label.begin_label==""){
+                        next->label.begin_label=new_label();                        
+                    }
+                    //下一句标签
+                    if(next->sibling!=nullptr){
+                        if(next->sibling->label.begin_label!=""){
+                            next->label.next_label=next->sibling->label.begin_label;
+                        }
+                        else{
+                            next->label.next_label=next->sibling->label.begin_label=new_label();
+                        }
+                    } 
+                    else if(next->label.next_label==""){
+                        next->label.next_label=new_label();
+                        next->Sibling=0;
+                    }
+                    else{
+                        next->Sibling=0;
+                    }
+                    TreeNode* x=next->child->sibling; //判断语句
+                    TreeNode* y=x->sibling; //循环体语句块
+                    x->label.false_label=next->label.next_label;
+                    x->label.true_label=y->label.begin_label=new_label();
+                    y->label.next_label=next->label.begin_label;             
+                }
+                else if(next->stype==STMT_IF){
+                    TreeNode *x=next->child->sibling;//判断语句
+                    TreeNode *y=x->sibling; //if执行的语句块
+                    //给next的下一条语句的begin_label置为next的next_label
+                    if(next->sibling!=nullptr){
+                        if(next->sibling->label.begin_label!=""){
+                            next->label.next_label=next->sibling->label.begin_label;
+                        }
+                        else{
+                            next->label.next_label=next->sibling->label.begin_label=new_label();
+                        }
+                    }
+                    else if(next->label.next_label==""){
+                        next->label.next_label=new_label();
+                        next->Sibling=0;
+                    }
+                    else{
+                        next->Sibling=0;
+                    }
+                    //说明是if单语句
+                    if(y->sibling==nullptr){
+                        x->label.true_label=y->label.begin_label=new_label();  
+                        x->label.false_label=next->label.next_label;                                                                 
+                    }
+                    //说明是if_else语句
+                    else{
+                        TreeNode* z=y->sibling->sibling;//else执行的语句块
+                        y->label.next_label=next->label.next_label;
+                        x->label.true_label=y->label.begin_label=new_label();
+                        x->label.false_label=z->label.begin_label=new_label();
+                        if(z!=nullptr&&z->stype==STMT_IF)//如果还是if语句
+                        {
+                            z->label.next_label=next->label.next_label;
+                        }
+                    }
+                }
+                else if(next->stype==STMT_FOR){
+                    //开始标签
+                    if(next->label.begin_label==""){
+                        next->label.begin_label=new_label();
+                    }
+                    //下一句标签
+                    if(next->sibling!=nullptr){
+                        if(next->sibling->label.begin_label!=""){
+                            next->label.next_label=next->sibling->label.begin_label;
+                        }
+                        else{
+                            next->label.next_label=next->sibling->label.begin_label=new_label();
+                        }
+                    }
+                    else if(next->label.next_label==""){
+                        next->label.next_label=new_label();
+                        next->Sibling=0;
+                    }  
+                    else{
+                        next->Sibling=0;
+                    }
+                    TreeNode* x=next->child->sibling->sibling;//判断语句
+                    TreeNode* y=x->sibling->sibling;//循环体的语句块
+                    x->label.true_label=y->label.begin_label=new_label();
+                    x->label.false_label=next->label.next_label;
+                    y->label.next_label=next->label.begin_label;
+                }                                    
+            }
+            s.push(next->sibling);
+            next=next->child;
+        }
     }
 }
 
+string TreeNode::new_label(){
+    static int count=0;
+    string tmp="L"+to_string(count);
+    count++;
+    return tmp;
+}
 
-
-
-bool TreeNode::typeCheck(){
-	switch (this->nodeType){
-        case NODE_BODY:
-        {
-            TreeNode *curr = this->child;
-            for(curr;curr->sibling !=nullptr;curr = curr->sibling){
-                curr->typeCheck();
+void TreeNode::gen_content(){
+    if(this->nodeType==NODE_STMT){
+        if(this->stype==STMT_WHILE){
+            if(this->label.begin_label!=""){
+                //输出开始label对应的汇编节点
+                cout<<this->label.begin_label<<":"<<endl;
             }
-            break;
+
+            //循环判断条件和循环体
+            TreeNode* judge=this->child->sibling;
+            TreeNode* body=judge->sibling;
+
+            judge->gen_content();    //循环判断条件递归
+
+            cout<<"\tmovl $1,%eax"<<endl;
+
+            if(judge->nodeType==NODE_CONST) //条件是常量，直接与1（true）进行比较
+            {
+                cout<<"\tcmpl $"<<judge->b_val<<",%eax"<<endl;           
+            } else {                        //条件是表达式，便取其对应的临时变量值进行比较
+                cout<<"\tcmpl _"<<judge->var_name<<",%eax"<<endl;
+            }
+            //不等（为假）则跳出
+            cout<<"\tjne "<<this->label.next_label<<endl;
+            body->gen_content(); //循环体递归
+            cout<<"\tjmp "<<this->label.begin_label<<endl; //继续循环
+
+            //如果无后继节点，打出其next_label，有的话会在遍历到它时打出begin_label
+            if(this->Sibling==0){
+                cout<<this->label.next_label<<":"<<endl;
+            }
         }
-        case NODE_STMT:
-            if(sType2String(this->stype) == "=" || sType2String(this->stype) == "+=" \
-            || sType2String(this->stype) == "-=" || sType2String(this->stype) == "*=" \
-            || sType2String(this->stype) == "%=" || sType2String(this->stype) == "/=" ){
-                if(this->child->typeCheck()&&this->child->sibling->typeCheck()){
-                    if(this->child->type->getTypeInfo() == this->child->sibling->type->getTypeInfo()){
-                        this->type = this->child->type;
-                        return true;
-                    } else {
-                        cout<<"ASSIGN STMT type error at line "<<lineno<<endl;
-                        exit(1);
-                    }
+        else if(this->stype==STMT_IF){
+            if(this->label.begin_label!=""){
+                //输出开始label对应的汇编节点
+                cout<<this->label.begin_label<<":"<<endl;
+            }
+
+            //if判断条件和执行体
+            TreeNode* judge=this->child->sibling;
+            TreeNode* body=judge->sibling;
+
+            if(body->sibling==nullptr) //无else
+            {
+                judge->gen_content(); //if判断条件递归
+                cout<<"\tmovl $1,%eax"<<endl;
+                if(judge->nodeType==NODE_CONST) //常量
+                {
+                    cout<<"\tcmpl $"<<judge->b_val<<",%eax"<<endl;
+                } else {//表达式
+                    cout<<"\tcmpl _"<<judge->var_name<<",%eax"<<endl;
                 }
-            } else if (sType2String(this->stype) == "STMT_IF"){
-                if(this->child->typeCheck() && this->child->sibling->typeCheck()){
-                    if(this->child->type->getTypeInfo()!="bool"){
-                        cout<<"IF STMT type error at line "<<lineno<<endl;
-                        exit(1);
-                    } else{
-                        return true;
-                    }
+                cout<<"\tjne "<<this->label.next_label<<endl;
+                body->gen_content();
+            }
+            else //if_else语句
+            {
+                TreeNode* else_body=body->sibling->sibling;
+                judge->gen_content(); //if判断条件递归
+                cout<<"\tmovl $1,%eax"<<endl;
+                if(judge->nodeType==NODE_CONST) //常量
+                {
+                    cout<<"\tcmpl $"<<judge->b_val<<",%eax"<<endl;
+                } else {//表达式
+                    cout<<"\tcmpl _"<<judge->var_name<<",%eax"<<endl;
                 }
-            } else if (sType2String(this->stype) == "STMT_WHILE"){
-                if(this->child->typeCheck() && this->child->sibling->typeCheck()){
-                    if(this->child->type->getTypeInfo()!="bool"){
-                        cout<<"WHILE STMT type error at line "<<lineno<<endl;
-                        exit(1);
-                    } else{
-                        return true;
-                    }
-                }
-            } else if (sType2String(this->stype) == "STMT_FOR"){
-                if(this->child->typeCheck() && this->child->sibling->typeCheck() 
-                && this->child->sibling->sibling->typeCheck() && this->child->sibling->sibling->sibling->typeCheck()){
-                    if(this->child->sibling->type->getTypeInfo()!="bool"){
-                        cout<<"FOR STMT type error at line "<<lineno<<endl;
-                        exit(1);
-                    } else {
-                        return true;
-                    }
-                }
-            } else return true;
-            break;
-        case NODE_EXPR:
-            if(opType2String(this->optype) == "+" || opType2String(this->optype) == "-" \
-            ||opType2String(this->optype) == "*" || opType2String(this->optype) == "/"){
+                cout<<"\tjne "<<judge->label.false_label<<endl;
+
+                body->gen_content();
+
+                cout<<"\tjmp "<<this->label.next_label<<endl;
                 
-                if(this->child->typeCheck() && this->child->sibling->typeCheck()){
-                    if(this->child->type->getTypeInfo() == "int"&&this->child->sibling->type->getTypeInfo() == "int"){
-                        this->type = TYPE_INT;
-                        return true;
-                    } else if(this->child->type->getTypeInfo() == "double"&&this->child->sibling->type->getTypeInfo() == "double"){
-                        this->type = TYPE_DOUBLE;
-                        return true;
-                    }else if((this->child->type->getTypeInfo() == "double"&&this->child->sibling->type->getTypeInfo() == "int")\
-                    ||(this->child->type->getTypeInfo() == "int"&&this->child->sibling->type->getTypeInfo() == "double")){
-                        this->type = TYPE_DOUBLE;
-                        return true;
-                    }
-                    else{
-                        cout<<"Expr type error at line "<<lineno<<endl;
-                        exit(1);
-                    }
-                } else{
-                     cout<<"Expr type error at line "<<this->child->lineno<<endl;
-                     exit(1);
-                }
+                else_body->gen_content();
             }
-            if(opType2String(this->optype) == "%"){
-                
-                if(this->child->typeCheck() && this->child->sibling->typeCheck()){
-                    if(this->child->type->getTypeInfo() == "int"&&this->child->sibling->type->getTypeInfo() == "int"){
-                        this->type = TYPE_INT;
-                        return true;
-                    } else{
-                        cout<<"Expr type error at line "<<lineno<<endl;
-                        exit(1);
-                    }
-                } else{
-                     cout<<"Expr type error at line "<<this->child->lineno<<endl;
-                     exit(1);
-                }
+            if(this->Sibling==0){
+                cout<<this->label.next_label<<":"<<endl;
             }
-            if(opType2String(this->optype) == "++" || opType2String(this->optype) == "--"){
-                if(this->child->nodeType == NODE_VAR){
-                    if(this->child->type->getTypeInfo()=="int" || (this->child->type->getTypeInfo()=="double")){
-                        this->type = this->child->type;
-                        return true;
-                    }
-                    else{
-                        cout<<"Expr type error at line "<<lineno<<endl;
-                        exit(1);
-                    }
-                } else{
-                    cout<<"Expr selfm/selfp not followed by var at line "<<this->child->lineno<<endl;
-                    exit(1);
-                }
-            }
-            if((opType2String(this->optype) == "&&")||(opType2String(this->optype) == "||")){ 
-                if(this->child->typeCheck() && this->child->sibling->typeCheck()){
-                    if(this->child->type->getTypeInfo() == "bool"&&this->child->sibling->type->getTypeInfo() == "bool"){
-                        this->type = TYPE_BOOL;
-                        return true;
-                    } else{
-                        cout<<"Expr type error at line "<<lineno<<endl;
-                        exit(1);
-                    }
-                } else{
-                     cout<<"Expr type error at line "<<this->child->lineno<<endl;
-                     exit(1);
-                }
-            }
-            if(opType2String(this->optype) == "!") {
-                if(this->child->nodeType == NODE_VAR){
-                    if(this->child->type->getTypeInfo()=="bool"){
-                        this->type = TYPE_BOOL;
-                        return true;
-                    }
-                    else{
-                        cout<<"Expr type error at line "<<lineno<<endl;
-                        exit(1);
-                    }
-                } else{
-                    cout<<"Expr \"!\" not followed by var at line "<<this->child->lineno<<endl;
-                    exit(1);
-                }
-            }
-            if(opType2String(this->optype) == "==" || opType2String(this->optype) == "<=" || \
-               opType2String(this->optype) == ">=" || opType2String(this->optype) == "<" || \
-               opType2String(this->optype) == ">" || opType2String(this->optype) == "!=" ) {
-                if(this->child->typeCheck() && this->child->sibling->typeCheck()){
-                    if(((this->child->type->getTypeInfo() == "int")||(this->child->type->getTypeInfo() == "double")) \
-                    &&((this->child->sibling->type->getTypeInfo() == "int")||(this->child->sibling->type->getTypeInfo() == "double"))){
-                        this->type = TYPE_BOOL;
-                        return true;
-                    } else{
-                        cout<<"Expr type error at line "<<lineno<<endl;
-                        exit(1);
-                    }
-                } else{
-                     cout<<"Expr type error at line "<<this->child->lineno<<endl;
-                     exit(1);
-                }
-                return true;
-            }
-            break;
-        case NODE_TYPE:
-            return true;
-        case NODE_VAR:
-            return true;
-        case NODE_CONST:
-            return true;
-        default:
-            break;
-    }
-    for (TreeNode *t = this->child; t; t = t->sibling)
-        t->typeCheck();
-}
+        }
+        else if(this->stype==STMT_FOR){
+            TreeNode* decl=this->child->sibling;//声明语句
+            TreeNode* judge=decl->sibling;      //判断语句
+            TreeNode* assign=judge->sibling;    //赋值语句
+            TreeNode* body=assign->sibling;     //循环体
 
-void TreeNode::doType(){
-    if(this->nodeType == NODE_VAR){
-        //
-        if(SymbolTable.find(this->var_name) == SymbolTable.end()){
-            cout<<"Var "<<"\""<<this->var_name<<"\""<<" not defined at line "<<this->lineno<<endl;
-            exit(1);
-        } else {
-            this->type = SymbolTable[this->var_name];
+            decl->gen_content();
+
+            if(this->label.begin_label!=""){
+                cout<<this->label.begin_label<<":"<<endl;
+            }
+
+            judge->gen_content();
+
+            //与while如出一辙
+            cout<<"\tmovl $1,%eax"<<endl;
+            if(judge->nodeType==NODE_CONST){
+                cout<<"\tcmpl $"<<judge->b_val<<",%eax"<<endl;
+            }
+            else{
+                cout<<"\tcmpl _"<<judge->var_name<<",%eax"<<endl;
+            }
+            cout<<"\tjne "<<this->label.next_label<<endl;
+            //每次赋值语句均在循环体后执行，因而将其放在循环体之后
+            body->gen_content();
+            assign->gen_content();
+            //回跳，每次在开始进行比较
+            cout<<"\tjmp "<<this->label.begin_label<<endl;
+            if(this->Sibling==0){
+                cout<<this->label.next_label<<":"<<endl;
+            }
+        }
+        else if(this->stype==STMT_PRINTF){
+            if(this->label.begin_label!=""){
+                cout<<this->label.begin_label<<":"<<endl;
+            }
+            TreeNode* str=this->child->sibling;
+            if(str->sibling==nullptr) //无参
+            {
+                cout<<"\tpushl $STRING"<<str->count_string<<endl;
+                cout<<"\tcall printf"<<endl;
+                cout<<"\taddl $4,%esp"<<endl;
+            }
+            else //有参
+            {
+                TreeNode* curr=str->sibling;
+                int count=0;
+                //统计变量数目
+                while(curr!=nullptr){
+                    curr->gen_content();
+                    count++;
+                    cout<<"\tpushl _"<<curr->var_name<<endl;
+                    curr=curr->sibling;
+                }
+                cout<<"\tpushl $STRING"<<str->count_string<<endl;
+                cout<<"\tcall printf"<<endl;
+                cout<<"\taddl $"<<4*(count+1)<<",%esp"<<endl;
+            }
+        }
+        else if(this->stype==STMT_SCANF){
+            if(this->label.begin_label!=""){
+                cout<<this->label.begin_label<<":"<<endl;
+            }
+            TreeNode* str=this->child->sibling;
+            TreeNode* curr=str->sibling;
+            int count=0;
+            while(curr!=nullptr){
+                curr->gen_content();
+                count++;
+                cout<<"\tleal _"<<curr->var_name<<",%eax"<<endl;
+                cout<<"\tpushl %eax"<<endl;
+                curr=curr->sibling;
+            }
+            cout<<"\tpushl $STRING"<<str->count_string<<endl;
+            cout<<"\tcall scanf"<<endl;
+            cout<<"\taddl $"<<4*(count+1)<<",%esp"<<endl;
+        }
+        else if(this->stype==STMT_DECL){
+            if(this->label.begin_label!=""){
+                cout<<this->label.begin_label<<":"<<endl;
+            }
+            TreeNode* id1=this->child->sibling;
+            TreeNode* id2=id1->sibling;
+
+            if(id2!=nullptr)
+            {
+                if(id2->nodeType==NODE_OP&&id2->optype==OP_ASSIGN)
+                {
+                    TreeNode* value=id2->sibling;
+                    value->gen_content();
+                    if(value->nodeType==NODE_CONST){
+                        if(value->type==TYPE_INT){
+                            cout<<"\tmovl $"<<value->int_val<<",_"<<id1->var_name<<endl;
+                        }
+                        else if(value->type==TYPE_BOOL){
+                            cout<<"\tmovl $"<<value->b_val<<",_"<<id1->var_name<<endl;
+                        }
+                        else if(value->type==TYPE_CHAR){ //ascll代码式赋值
+                            cout<<"\tmovl $"<<int(value->ch_val)<<",_"<<id1->var_name<<endl;
+                        }
+                    }
+                    else if(value->nodeType==NODE_EXPR){
+                        if(value->type==TYPE_INT){
+                            cout<<"\tmovl _"<<value->var_name<<",%eax"<<endl;
+                            cout<<"\tmovl %eax,_"<<id1->var_name<<endl;
+                        }
+                    }
+                }
+            }
+            
+        }
+        else if(this->stype==STMT_ASSIGN){
+            if(this->label.begin_label!=""){
+                cout<<this->label.begin_label<<":"<<endl;
+            }
+            TreeNode* expr=this->child;
+            while(expr!=nullptr){
+                expr->gen_content();
+                expr=expr->sibling;
+            }
+            expr=this->child; //赋值对象
+            TreeNode* op = expr->sibling; //赋值号
+            TreeNode* value = op->sibling; //值
+            if(expr->nodeType==NODE_VAR){
+                if(op->optype==OP_ASSIGN){
+                    if(value->nodeType==NODE_CONST) //值是常量
+                    {
+                        if(value->type==TYPE_INT){
+                            cout<<"\tmovl $"<<value->int_val<<",_"<<expr->var_name<<endl;
+                        }
+                        else if(value->type==TYPE_BOOL){
+                            cout<<"\tmovl $"<<value->b_val<<",_"<<expr->var_name<<endl;
+                        }
+                        else if(value->type==TYPE_CHAR){
+                            cout<<"\tmovl $"<<int(value->ch_val)<<",_"<<expr->var_name<<endl;
+                        }
+                    }
+                    else if(value->nodeType==NODE_STMT&&value->stype==STMT_ASSIGN) //连续赋值
+                    {
+                        TreeNode* curr=value->child;
+                        //循环拿到最后一个
+                        while(curr!=nullptr){
+                            while(curr->sibling!=nullptr){
+                                curr=curr->sibling;
+                            }                               
+                            if(curr->nodeType!=NODE_STMT||curr->stype!=STMT_ASSIGN){
+                                break;
+                            }                             
+                            else{
+                                curr=curr->child;
+                            }                                
+                        }
+                        if(curr->nodeType==NODE_CONST) //常量赋值
+                        {
+                            if(curr->type==TYPE_INT){
+                                cout<<"\tmovl $"<<curr->int_val<<",_"<<expr->var_name<<endl;
+                            }
+                            else if(curr->type==TYPE_BOOL){
+                                cout<<"\tmovl $"<<curr->b_val<<",_"<<expr->var_name<<endl;
+                            }
+                            else if(curr->type==TYPE_CHAR){
+                                cout<<"\tmovl $"<<int(curr->ch_val)<<",_"<<expr->var_name<<endl;
+                            }
+                        }
+                        else //表达式或者变量赋值
+                        {
+                            cout<<"\tmovl _"<<curr->var_name<<",%eax"<<endl;
+                        }
+                        cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                    }
+                    else //表达式或者变量赋值
+                    {
+                        cout<<"\tmovl _"<<value->var_name<<",%eax"<<endl;
+                        cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                    }
+                }
+                else if(op->optype==OP_PLUS_ASSIGN){
+                    if(value->nodeType==NODE_CONST) //常量
+                    {
+                        if(value->type==TYPE_INT){
+                            cout<<"\taddl $"<<value->int_val<<",_"<<expr->var_name<<endl;
+                        } //类型转换
+                        else if(value->type==TYPE_CHAR){
+                            cout<<"\taddl $"<<int(value->ch_val)<<",_"<<expr->var_name<<endl;
+                        }
+                    }
+                    else //表达式或变量
+                    {
+                        cout<<"\tmovl _"<<value->var_name<<",%eax"<<endl;
+                        cout<<"\taddl %eax,_"<<expr->var_name<<endl;
+                    }
+                }
+                else if(op->optype==OP_MINUS_ASSIGN){
+                    if(value->nodeType==NODE_CONST) //常量
+                    {
+                        if(value->type==TYPE_INT){
+                            cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                            cout<<"\tsubl $"<<value->int_val<<",%eax"<<endl;
+                            cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                        } //类型转换
+                        else if(value->type==TYPE_CHAR){
+                            cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                            cout<<"\tsubl $"<<int(value->ch_val)<<",%eax"<<endl;
+                            cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                        }
+                    }
+                    else //表达式或变量
+                    {
+                        cout<<"\tmovl _"<<value->var_name<<",%eax"<<endl;
+                        cout<<"\tsubl %eax,_"<<expr->var_name<<endl;
+                    }
+                }
+                else if(op->optype==OP_MULTITI_ASSIGN){
+                    if(value->nodeType==NODE_CONST) //常量
+                    {
+                        if(value->type==TYPE_INT){
+                            cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                            cout<<"\timull $"<<value->int_val<<",%eax"<<endl;
+                            cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                        } //类型转换
+                        else if(value->type==TYPE_CHAR){
+                            cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                            cout<<"\timull $"<<int(value->ch_val)<<",%eax"<<endl;
+                            cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                        }
+                    }
+                    else //表达式或变量
+                    {
+                        cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                        cout<<"\timull _"<<value->var_name<<",%eax"<<endl;
+                        cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                    }
+                }
+                else if(op->optype==OP_DIVIDID_ASSIGN){
+                    /*
+                        idiv指令：
+                        eax/ebx 结果放在eax，余数放在edx
+                        edx需要置0
+                    */
+                    if(value->nodeType==NODE_CONST) //常量
+                    {
+                        if(value->type==TYPE_INT){
+                            cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                            cout<<"\tmovl $0,%edx"<<endl;
+                            cout<<"\tmovl $"<<value->int_val<<",%ebx"<<endl;
+                            cout<<"\tidiv %ebx"<<endl;
+                        } //类型转换
+                        else if(value->type==TYPE_CHAR){
+                            cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                            cout<<"\tmovl $0,%edx"<<endl;
+                            cout<<"\tmovl $"<<int(value->ch_val)<<",%ebx"<<endl;
+                            cout<<"\tidiv %ebx"<<endl;
+                        }
+                    }
+                    else //表达式或变量
+                    {
+                        cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                        cout<<"\tmovl $0,%edx"<<endl;
+                        cout<<"\tmovl _"<<value->var_name<<",%ebx"<<endl;
+                        cout<<"\tidiv %ebx"<<endl;
+                    }
+                    cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                }
+            }
+        }
+        else if(this->stype==STMT_BLOCK){
+            if(this->label.begin_label!=""){
+                cout<<this->label.begin_label<<":"<<endl;
+            }
+            TreeNode* stmt=this->child;
+            while(stmt!=nullptr){
+                stmt->gen_content();
+                stmt=stmt->sibling;
+            }
+        }
+        else if(this->stype==STMT_RET){
+            if(this->label.begin_label!=""){
+                cout<<this->label.begin_label<<":"<<endl;
+            }
+            cout<<"\tmovl $0,%eax"<<endl;
+            cout<<"\tret"<<endl;
         }
     }
-    for (TreeNode *t = this->child; t; t = t->sibling)
-        t->doType();
-}
-
-void TreeNode::tableInsert(){
-    if (this->stype == STMT_DECL && this->child != nullptr){
-        TreeNode *curr = this->child->sibling;
-        Type* temp = this->child->type;
-        while (curr != nullptr){
-            if (curr->nodeType == NODE_VAR){
-                SymbolTable[curr->var_name] = temp;
-                curr->type = temp;
+    else if(this->nodeType==NODE_EXPR){
+        TreeNode* expr=this->child;
+        while(expr!=nullptr){
+            expr->gen_content();
+            expr=expr->sibling;
+        }
+        expr=this->child;
+        if(this->etype==EXPR_OR){
+            TreeNode* expr2=expr->sibling->sibling;
+            if(expr->nodeType==NODE_CONST){
+                cout<<"\tmovl $"<<expr->b_val<<",%eax"<<endl;
             }
-            curr = curr->sibling;
+            else{
+                cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+            }
+            if(expr2->nodeType==NODE_CONST){
+                cout<<"\tor $"<<expr2->b_val<<",%eax"<<endl;
+            }
+            else{
+                cout<<"\tor _"<<expr2->var_name<<",%eax"<<endl;
+            }
+            cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+        }
+        else if(this->etype==EXPR_AND){
+            TreeNode* expr2=expr->sibling->sibling; 
+            if(expr->nodeType==NODE_CONST){
+                cout<<"\tmovl $"<<expr->b_val<<",%eax"<<endl;
+            }
+            else{
+                cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+            }
+            if(expr2->nodeType==NODE_CONST){
+                cout<<"\tand $"<<expr2->b_val<<",%eax"<<endl;
+            }
+            else{
+                cout<<"\tand _"<<expr2->var_name<<",%eax"<<endl;
+            }
+            cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+        }
+        else if(this->etype==EXPR_EQ){
+            TreeNode* jdg_op=expr->sibling;
+            TreeNode* expr2=jdg_op->sibling;
+            if(jdg_op->optype==OP_EQ) {
+                //==
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tcmpl $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tcmpl _"<<expr2->var_name<<",%eax"<<endl;
+                }
+                string tmp = new_label();
+                string tmp2 = new_label();
+                cout<<"\tje "<<tmp<<endl;
+                cout<<"\tmovl $0,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<"\tjmp "<<tmp2<<endl;
+                cout<<tmp<<":"<<endl;
+                cout<<"\tmovl $1,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<tmp2<<":"<<endl;
+            }
+            else {
+                //!= 基本相同，je和jne的区别
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tcmpl $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tcmpl _"<<expr2->var_name<<",%eax"<<endl;
+                }
+                string tmp=new_label();
+                string tmp2=new_label();
+                cout<<"\tjne "<<tmp<<endl;
+                cout<<"\tmovl $0,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<"\tjmp "<<tmp2<<endl;
+                cout<<tmp<<":"<<endl;
+                cout<<"\tmovl $1,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<tmp2<<":"<<endl;
+            }
+        }
+        else if(this->etype==EXPR_RELATION){
+            TreeNode* jdg_op=expr->sibling;
+            TreeNode* expr2=jdg_op->sibling;
+            if(jdg_op->optype==OP_BT){
+                // > 应对方式相近
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tcmpl $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tcmpl _"<<expr2->var_name<<",%eax"<<endl;
+                }
+                string tmp=new_label();
+                string tmp2=new_label();
+                cout<<"\tjg "<<tmp<<endl;
+                cout<<"\tmovl $0,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<"\tjmp "<<tmp2<<endl;
+                cout<<tmp<<":"<<endl;
+                cout<<"\tmovl $1,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<tmp2<<":"<<endl;                
+            }
+            else if(jdg_op->optype==OP_ST){
+                // <  复制粘贴
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tcmpl $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tcmpl _"<<expr2->var_name<<",%eax"<<endl;
+                }
+                string tmp=new_label();
+                string tmp2=new_label();
+                cout<<"\tjl "<<tmp<<endl;
+                cout<<"\tmovl $0,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<"\tjmp "<<tmp2<<endl;
+                cout<<tmp<<":"<<endl;
+                cout<<"\tmovl $1,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<tmp2<<":"<<endl;
+            }
+            else if(jdg_op->optype==OP_BEQ){
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tcmpl $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tcmpl _"<<expr2->var_name<<",%eax"<<endl;
+                }
+                string tmp=new_label();
+                string tmp2=new_label();
+                cout<<"\tjge "<<tmp<<endl;
+                cout<<"\tmovl $0,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<"\tjmp "<<tmp2<<endl;
+                cout<<tmp<<":"<<endl;
+                cout<<"\tmovl $1,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<tmp2<<":"<<endl;
+            }
+            else if(jdg_op->optype==OP_SEQ){
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tcmpl $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tcmpl _"<<expr2->var_name<<",%eax"<<endl;
+                }
+                string tmp=new_label();
+                string tmp2=new_label();
+                cout<<"\tjle "<<tmp<<endl;
+                cout<<"\tmovl $0,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<"\tjmp "<<tmp2<<endl;
+                cout<<tmp<<":"<<endl;
+                cout<<"\tmovl $1,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+                cout<<tmp2<<":"<<endl;
+            }
+        }
+        else if(this->etype==EXPR_ADD_SUB){
+            TreeNode* jdg_op=expr->sibling;
+            TreeNode* expr2=jdg_op->sibling;
+            if(jdg_op->optype==OP_PLUS){
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\taddl $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\taddl _"<<expr2->var_name<<",%eax"<<endl;
+                }
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+            else{
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tsubl $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tsubl _"<<expr2->var_name<<",%eax"<<endl;
+                }               
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+        }
+        else if(this->etype==EXPR_MUL_DIV){
+            TreeNode* jdg_op=expr->sibling;
+            TreeNode* expr2=jdg_op->sibling;
+            if(jdg_op->optype==OP_MULTI){
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\timull $"<<expr2->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\timull _"<<expr2->var_name<<",%eax"<<endl;
+                }
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+            else if(jdg_op->optype==OP_DIVID){
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                    cout<<"\tmovl $0,%edx"<<endl;
+                    cout<<"\tcltd"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                    cout<<"\tmovl $0,%edx"<<endl;
+                    cout<<"\tcltd"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr2->int_val<<",%ebx"<<endl;
+                    cout<<"\tidiv %ebx"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr2->var_name<<",%ebx"<<endl;
+                    cout<<"\tidiv %ebx"<<endl;
+                }
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+            else if(jdg_op->optype==OP_MOD){
+                if(expr->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr->int_val<<",%eax"<<endl;
+                    cout<<"\tmovl $0,%edx"<<endl;
+                    cout<<"\tcltd"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                    cout<<"\tmovl $0,%edx"<<endl;
+                    cout<<"\tcltd"<<endl;
+                }
+                if(expr2->nodeType==NODE_CONST){
+                    cout<<"\tmovl $"<<expr2->int_val<<",%ebx"<<endl;
+                    cout<<"\tidiv %ebx"<<endl;
+                }
+                else{
+                    cout<<"\tmovl _"<<expr2->var_name<<",%ebx"<<endl;
+                    cout<<"\tidiv %ebx"<<endl;
+                }
+                cout<<"\tmovl %edx,_"<<this->var_name<<endl;
+            }
+        }
+        else if(this->etype==EXPR_UNARY_LEFT){
+            //与true异或实现取非
+            TreeNode* jdg_op=expr;
+            TreeNode* value=jdg_op->sibling;
+            if(jdg_op->optype==OP_LG_NOT){
+                cout<<"\tmovl $1,%eax"<<endl;
+                if(value->nodeType==NODE_CONST){
+                    cout<<"\txor $"<<value->b_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\txor _"<<value->var_name<<",%eax"<<endl;
+                }
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+            else if(jdg_op->optype==OP_PLUS){
+                cout<<"\tmovl $0,%eax"<<endl;
+                if(value->nodeType==NODE_CONST){
+                    cout<<"\taddl $"<<value->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\taddl _"<<value->var_name<<",%eax"<<endl;
+                }
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+            else if(jdg_op->optype==OP_MINUS){
+                cout<<"\tmovl $0,%eax"<<endl;
+                if(value->nodeType==NODE_CONST){
+                    cout<<"\tsubl $"<<value->int_val<<",%eax"<<endl;
+                }
+                else{
+                    cout<<"\tsubl _"<<value->var_name<<",%eax"<<endl;
+                }
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+            else if(jdg_op->optype==OP_SELFP){
+                cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                cout<<"\taddl $1,%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+            else if(jdg_op->optype==OP_SELFM){
+                cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                cout<<"\tsubl $1,%eax"<<endl;                
+                cout<<"\tmovl %eax,_"<<this->var_name<<endl;
+            }
+        }
+        else if(this->etype==EXPR_POSTFIX){
+            TreeNode* jdg_op=expr->sibling;
+            if(jdg_op->optype==OP_SELFP){ //++
+                cout<<"\tmovl $1,%eax"<<endl;
+                cout<<"\taddl _"<<expr->var_name<<",%eax"<<endl;
+                cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+            }
+            else{ //--
+                cout<<"\tmovl _"<<expr->var_name<<",%eax"<<endl;
+                cout<<"\tsubl $1,%eax"<<endl;                
+                cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+            }
         }
     }
-    for (TreeNode *t = this->child; t; t = t->sibling)
-        t->tableInsert();
-}
-
-void TreeNode::tablePrint(){
-    std::map<string, Type*>::iterator iter;
-    for (iter = SymbolTable.begin(); iter != SymbolTable.end(); iter++)
-    {
-        cout<< iter->first<<"  "<< iter->second->getTypeInfo()<<",";
+    else{
+        TreeNode* next=this->child;
+        while(next!=nullptr){
+            next->gen_content();
+            next=next->sibling;
+        }
     }
-}
-
-void TreeNode::printSpecialInfo() {
-    switch(this->nodeType){
-        case NODE_CONST:
-            break;
-        case NODE_VAR:
-            break;
-        case NODE_EXPR:
-            break;
-        case NODE_STMT:
-            break;
-        case NODE_TYPE:
-            break;
-        default:
-            break;
-    }
-}
-
-string TreeNode::sType2String(StmtType type) {
-    switch(type){
-        case STMT_ASSIGN:
-            return "=";
-            break;
-        case STMT_DECL:
-            return "STMT_DECL";
-            break;
-        case STMT_DIVID_ASSIGN:
-            return "/=";
-            break;
-        case STMT_ELSE:
-            return "STMT_ELSE";
-            break;
-        case STMT_FUNC_CALL:
-            return "STMT_FUNC_CALL";
-            break;
-        case STMT_IF:
-            return "STMT_IF";
-            break;
-        case STMT_MINUS_ASSIGN:
-            return "-=";
-            break;
-        case STMT_MOD_ASSIGN:
-            return "%=";
-            break;
-        case STMT_MULTI_ASSIGN:
-            return "*=";
-            break;
-        case STMT_PLUS_ASSIGN:
-            return "+=";
-            break;
-        case STMT_PRINTF:
-            return "STMT_PRINTF";
-            break;
-        case STMT_RETURN:
-            return "STMT_RETURN";
-            break;
-        case STMT_SCANF:
-            return "STMT_SCANF";
-            break;
-        case STMT_SKIP:
-            return "STMT_SKIP";
-            break;
-        case STMT_WHILE:
-            return "STMT_WHILE";
-            break;
-        case STMT_FOR:
-            return "STMT_FOR";
-            break;
-        default:
-            return "?";
-            break;
-    }
-}
-
-string TreeNode::nodeType2String (NodeType type){
-    switch(type){
-        case NODE_CONST:
-            return "NODE_CONST";
-        case NODE_EXPR:
-            return "NODE_EXPR";
-        case NODE_MAIN:
-            return "NODE_MAIN";
-        case NODE_PROG:
-            return "NODE_PROG";
-        case NODE_STMT:
-            return "NODE_STMT";
-        case NODE_TYPE:
-            return "NODE_TYPE";
-        case NODE_VAR:
-            return "NODE_VAR";
-        case NODE_BODY:
-            return "NODE_BODY";
-        default:
-            return "<>";
-            break;
-    }
-}
-
-string TreeNode::opType2String (OperatorType type) {
-    switch(type){
-        case OP_AND:
-            return "&";
-        case OP_BEQ:
-            return ">=";
-        case OP_BT:
-            return ">";
-        case OP_DIVID:
-            return "/";
-        case OP_EQ:
-            return "==";
-        case OP_LG_AND:
-            return "&&";
-        case OP_LG_NOT:
-            return "!";
-        case OP_LG_OR:
-            return "||";
-        case OP_MINUS:
-            return "-";
-        case OP_MULTI:
-            return "*";
-        case OP_NEQ:
-            return "!=";
-        case OP_MOD:
-            return "%";
-        case OP_ST:
-            return "<";
-        case OP_OR:
-            return "|";
-        case OP_NOT:
-            return "~";
-        case OP_PLUS:
-            return "+";
-        case OP_SEQ:
-            return "<=";
-        case OP_SELFM:
-            return "--";
-        case OP_SELFP:
-            return "++";
-        default:
-            return "?";
-            break;
-    }
-}
-
-TreeNode* expr_addChild(TreeNode* node1, TreeNode* node2, TreeNode* node3){
-    TreeNode* curr = node2;
-    curr->addChild(node1);
-    if(node3 != nullptr){
-        curr->addChild(node3);
-    }
-    return curr;
-}
-
-TreeNode *for_addChild(int lineno,TreeNode *node1, TreeNode *node2, TreeNode *node3, TreeNode *node4){
-    //for根节点
-    TreeNode *node = new TreeNode(lineno, NODE_STMT);
-    node->stype = STMT_FOR;
-    node->addChild(node1);
-    node->addChild(node2);
-    node->addChild(node3);
-    node->addChild(node4);
-    return node;
 }
 #endif

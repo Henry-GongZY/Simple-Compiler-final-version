@@ -1,13 +1,8 @@
-void main() {
+int main(){
+    int a;
     int b;
-    bool a;
-    while(a){
-        a=!a;
-    }
-    if(a){
-        b++;
-    } else{
-        b--;
-    }
+    a = 10;
+    b = 1;
+    a/=b;
+    printf("%d\n",a);
 }
-// No more compilation error.
