@@ -1,8 +1,8 @@
+int a;
+int b;
+int c;
 int main(){
-    int a;
-    int b;
-    a = 10;
-    b = 1;
-    a/=b;
-    printf("%d\n",a);
+    a = b = c = 3;
+    printf("test:%d %d %d\n",a,b,c);
+    return 0;
 }

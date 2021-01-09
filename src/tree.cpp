@@ -583,10 +583,12 @@ void TreeNode::gen_content(){
             }
             TreeNode* str=this->child->sibling;
             TreeNode* curr=str->sibling;
+            //遍历获取输入变量个数，据此决定栈空间大小
             int idcount=0;
             while(curr!=nullptr){
                 curr->gen_content();
                 idcount++;
+                //依次引用入栈
                 cout<<"\tleal _"<<curr->var_name<<",%eax"<<endl;
                 cout<<"\tpushl %eax"<<endl;
                 curr=curr->sibling;
@@ -686,7 +688,7 @@ void TreeNode::gen_content(){
                         {
                             cout<<"\tmovl _"<<curr->var_name<<",%eax"<<endl;
                         }
-                        cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
+                        //cout<<"\tmovl %eax,_"<<expr->var_name<<endl;
                     }
                     else //表达式或者变量赋值
                     {

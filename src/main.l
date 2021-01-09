@@ -15,13 +15,55 @@ extern Type* TYPE_CHAR;
 extern Type* TYPE_BOOL;
 extern Type* TYPE_STRING;
 extern Type* TYPE_VOID;
+
+int str2int(string num){
+    int val = 0, curr;
+    if(num == "0"){
+        return 0;
+    }
+    if(num[0] != '0'){
+        val = num[0] - '0';
+        curr = 1;
+        while(num[curr]){
+            val *= 10;
+            val += num[curr] - '0';
+            curr ++;
+        }
+    }else if(num[1] != 'X' && num[1] != 'x'){
+        val = num[1] - '0';
+        curr = 2;
+        while(num[curr]){
+            val *= 8;
+            val += num[curr] - '0';
+            curr ++;
+        }
+    }else{
+        if(num[2] >= '0' && num[2] <= '9'){
+            val += num[2] - '0';
+        }else{
+            val += num[2] - 'A' + 10;
+        }
+        curr = 3;
+        while(num[curr]){
+            val *= 16;
+            if(num[curr] >= '0' && num[curr] <= '9'){
+                val += num[curr] - '0';
+            }else{
+                val += num[curr] - 'A' + 10;
+            }
+            curr ++;
+        }
+    }
+    return val;
+}
+
 %}
 BLOCKCOMMENT \/\*([^\*^\/]*|[\*^\/\*]*|[^\**\/]*)*\*\/
 LINECOMMENT \/\/[^\n]*
 EOL	(\r\n|\r|\n)
 WHILTESPACE [[:blank:]]
 
-INTEGER [0-9]+
+INTEGER 0|([1-9][0-9]*)|(0[1-7][0-7]*)|(0[Xx][1-9a-fA-F][0-9a-fA-F]*)
 BOOL true|false
 CHAR \'.?\'|\'\\t\'|\'\\n\'|\'\\r\'
 STRING \".+\"
@@ -79,7 +121,7 @@ IDENTIFIER [[:alpha:]_][[:alpha:][:digit:]_]*
 {INTEGER} {
     TreeNode* node = new TreeNode(lineno, NODE_CONST);
     node->type=TYPE_INT;
-    node->int_val=atoi(yytext);
+    node->int_val=str2int(yytext);
     yylval = node;
     return INTEGER;
 }
