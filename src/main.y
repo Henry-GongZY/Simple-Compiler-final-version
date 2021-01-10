@@ -288,14 +288,14 @@ if_stmt
         if($2->type!=TYPE_BOOL){
             if($2->type==TYPE_INT){
                 $2->type=TYPE_BOOL;
-                $2->b_val=$2->int_val;
+                $2->b_val=bool($2->int_val);
             }
             else if($2->type==TYPE_CHAR){
                 $2->type=TYPE_BOOL;
                 $2->b_val=$2->ch_val;
             }
             else{
-                cerr<<"Wrong string type at line "<<$2->lineno<<endl;
+                cerr<<"Wrong type at line "<<$2->lineno<<endl;
                 exit(1);
             }
         }
